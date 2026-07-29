@@ -13,8 +13,7 @@ struct Frame {
     var poof: PoofKind? = nil
 }
 
-/// Claude Code's own animation table, reproduced frame for frame, plus a set of
-/// idle fidgets so Clawd has something to do when nothing is happening.
+/// Animation table including canonical Claude Code moves and Chef Cooking sequences
 enum Sequences {
 
     static let frameInterval: TimeInterval = 0.060
@@ -23,13 +22,12 @@ enum Sequences {
         (0..<count).map { _ in Frame(pose: pose, offset: offset) }
     }
 
-    /// The two-frame puff that starts a hop.
     private static func puff() -> [Frame] {
         [Frame(pose: .standing, offset: 2, poof: .dot),
          Frame(pose: .standing, offset: 2, poof: .wave)]
     }
 
-    // MARK: Canonical — these match Claude Code frame for frame
+    // MARK: Canonical — match Claude Code frame for frame
 
     static let look: [Frame] =
         hold(.lookRight, 5) + hold(.lookLeft, 5) + hold(.standing, 1)
@@ -45,8 +43,6 @@ enum Sequences {
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.lookLeft, 2) +
         hold(.armsUp, 3) + hold(.standing, 1)
 
-    /// Three hops in a row. Sideways travel is driven by the view, not by
-    /// per-frame offsets, so the sprite never draws outside its window.
     static let skip: [Frame] =
         hold(.standing, 1, offset: 2) + hold(.armsUp, 2) + hold(.standing, 1) +
         hold(.standing, 1, offset: 2) + hold(.armsUp, 2) + hold(.standing, 1) +
@@ -55,19 +51,36 @@ enum Sequences {
 
     static let skipDuration: TimeInterval = TimeInterval(skip.count) * frameInterval
 
-    /// Clicking Clawd in Claude Code plays one of these at random.
+    // MARK: Chef & Cooking Animations 👨‍🍳🔥
+
+    static let chefCooking: [Frame] =
+        hold(.chefStanding, 4) +
+        hold(.chefCookingA, 4, offset: -1) + // Flip food into air!
+        hold(.chefCookingB, 4) +             // Sizzle catch!
+        hold(.chefStanding, 3) +
+        hold(.chefCookingA, 4, offset: -1) + // Flip again!
+        hold(.chefCookingB, 4) +
+        hold(.chefJoy, 5) +                  // Celebrate dish!
+        hold(.chefStanding, 3)
+
+    static let chefQuickFlip: [Frame] =
+        hold(.chefStanding, 2) +
+        hold(.chefCookingA, 3, offset: -1) +
+        hold(.chefCookingB, 3) +
+        hold(.chefStanding, 2)
+
     static func clickReaction() -> [Frame] {
-        Bool.random() ? jump : look
+        let options = [jump, look, chefCooking]
+        return options.randomElement()!
     }
 
     // MARK: From the crab-walk GIF
 
-    /// Legs alternate while the body bobs. Four steps per loop.
     static let walk: [Frame] =
         hold(.walkA, 3, offset: 1) + hold(.standing, 2) +
         hold(.walkB, 3, offset: 1) + hold(.standing, 2)
 
-    // MARK: Idle fidgets — the personality
+    // MARK: Idle fidgets — personality
 
     static let blink: [Frame] =
         hold(.asleep, 2) + hold(.standing, 4)
@@ -75,40 +88,32 @@ enum Sequences {
     static let doubleBlink: [Frame] =
         hold(.asleep, 2) + hold(.standing, 3) + hold(.asleep, 2) + hold(.standing, 4)
 
-    /// Slow sweep of the room.
     static let lookAround: [Frame] =
         hold(.lookLeft, 7) + hold(.standing, 4) + hold(.lookRight, 7) + hold(.standing, 4)
 
-    /// Rises up on tiptoe with both arms out, holds, then settles.
     static let stretch: [Frame] =
         hold(.armsUp, 3) + hold(.armsUp, 6, offset: -2) + hold(.armsUp, 4, offset: -1) +
         hold(.standing, 3) + hold(.standing, 3, offset: 1) + hold(.standing, 3)
 
-    /// Shivers side to side.
     static let wiggle: [Frame] =
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.lookLeft, 2) +
         hold(.lookRight, 2) + hold(.standing, 3)
 
-    /// Marches on the spot.
     static let shuffle: [Frame] =
         hold(.walkA, 3) + hold(.walkB, 3) + hold(.walkA, 3) + hold(.walkB, 3) + hold(.standing, 2)
 
-    /// Sits down for a moment, then gets back up.
     static let sit: [Frame] =
         hold(.standing, 2, offset: 1) + hold(.squat, 20) +
         hold(.squat, 6) + hold(.standing, 2, offset: 1) + hold(.standing, 3)
 
-    /// A small nod.
     static let nod: [Frame] =
         hold(.standing, 3, offset: 1) + hold(.standing, 3) +
         hold(.standing, 3, offset: 1) + hold(.standing, 3)
 
-    /// Picked at random whenever Clawd has been standing still for a while.
     static func idleFidget() -> [Frame] {
-        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod].randomElement()!
+        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod, chefCooking].randomElement()!
     }
 
-    /// Twitches in its sleep.
     static func sleepFidget() -> [Frame] {
         [hold(.walkA, 3) + hold(.asleep, 3),
          hold(.asleep, 5, offset: -1) + hold(.asleep, 5),
@@ -117,21 +122,17 @@ enum Sequences {
 
     // MARK: Loops
 
-    /// Barely-there breathing for when nothing is running. ~2s per cycle.
     static let sleeping: [Frame] =
         hold(.asleep, 16) + hold(.asleep, 16, offset: 1)
 
-    /// Awake and waiting, but not working.
     static let idle: [Frame] =
         hold(.standing, 14) + hold(.standing, 10, offset: 1)
 
-    /// Busier loop, played while a turn is in flight.
     static let working: [Frame] =
-        hold(.standing, 4) + hold(.lookRight, 3) + hold(.standing, 3) +
-        hold(.lookLeft, 3) + hold(.standing, 2) + hold(.asleep, 2) + hold(.standing, 3)
+        hold(.chefStanding, 5) + hold(.chefCookingA, 4, offset: -1) +
+        hold(.chefCookingB, 4) + hold(.chefStanding, 3) +
+        hold(.lookRight, 3) + hold(.lookLeft, 3) + hold(.chefStanding, 3)
 
-    /// Deliberately unlike anything in the working set: Clawd waves both arms,
-    /// bounces, then tilts its head at you. Loops until you answer.
     static let asking: [Frame] =
         hold(.armsUp, 3) + hold(.standing, 2) +
         hold(.armsUp, 3) + hold(.standing, 2) +
@@ -142,7 +143,7 @@ enum Sequences {
     // MARK: Reactions
 
     static let excited: [Frame] =
-        hold(.armsUp, 2) + hold(.standing, 1) + hold(.armsUp, 2) + hold(.standing, 1) +
+        hold(.chefStanding, 2) + hold(.chefJoy, 3) + hold(.chefStanding, 2) +
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.standing, 2)
 
     static let flinch: [Frame] =
@@ -153,8 +154,7 @@ enum Sequences {
         hold(.standing, 2, offset: 2) + hold(.standing, 2)
 }
 
-/// Plays sequences on a fixed 60ms clock. A one-shot sequence runs to completion
-/// and then falls back to whatever loop is currently set.
+/// Plays sequences on a fixed 60ms clock.
 final class Animator {
 
     private(set) var current: Frame = Frame()
@@ -166,14 +166,12 @@ final class Animator {
     private var isOneShot = false
     private var lastOneShotStarted = Date.distantPast
 
-    /// True while a one-shot reaction is still playing.
     var isBusy: Bool { isOneShot }
 
     init() {
         current = sequence.first ?? Frame()
     }
 
-    /// Sets the background loop. Takes effect once any one-shot finishes.
     func setLoop(_ frames: [Frame]) {
         guard !frames.isEmpty else { return }
         let changed = !framesMatch(loopSequence, frames)
@@ -186,9 +184,6 @@ final class Animator {
         }
     }
 
-    /// Interrupts with a one-shot reaction, then returns to the loop.
-    ///
-    /// Rate-limited: a burst of twenty `Read` calls would otherwise strobe.
     @discardableResult
     func play(_ frames: [Frame], minimumGap: TimeInterval = 0.4) -> Bool {
         guard !frames.isEmpty else { return false }
