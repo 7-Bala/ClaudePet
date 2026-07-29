@@ -1,7 +1,7 @@
 import Cocoa
 
 /// Renders Clawd and owns its behaviour: reacting to Claude Code activity,
-/// strolling along the Dock, idling with personality & chef cooking attire,
+/// strolling along the Dock, idling with personality & chef/victory flag attire,
 /// and handling user interactions.
 final class ClawdView: NSView {
 
@@ -79,7 +79,8 @@ final class ClawdView: NSView {
     private func react(to event: String, tool: String?) {
         switch event {
         case "Stop", "StopFailure":
-            animator.play(Sequences.celebrate)
+            // Task finished -> wave Checkered Victory Flag!
+            animator.play(Sequences.flagVictory)
         case "UserPromptSubmit", "SessionStart":
             animator.play(Sequences.excited)
         case "SubagentStart", "SubagentStop":
@@ -374,6 +375,10 @@ final class ClawdView: NSView {
         }
 
         menu.addItem(.separator())
+        let flagItem = NSMenuItem(title: "Wave Victory Flag 🏁", action: #selector(triggerFlagVictory), keyEquivalent: "")
+        flagItem.target = self
+        menu.addItem(flagItem)
+
         let cookItem = NSMenuItem(title: "Cook Dish 👨‍🍳🔥", action: #selector(triggerChefCooking), keyEquivalent: "")
         cookItem.target = self
         menu.addItem(cookItem)
@@ -391,6 +396,10 @@ final class ClawdView: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
+    @objc private func triggerFlagVictory() {
+        animator.play(Sequences.flagVictory, minimumGap: 0)
+    }
+
     @objc private func triggerChefCooking() {
         animator.play(Sequences.chefCooking, minimumGap: 0)
     }
@@ -398,9 +407,9 @@ final class ClawdView: NSView {
     private func statusLine() -> String {
         switch mood {
         case .asleep:      return "Sleeping"
-        case .working:     return "Claude is cooking..."
+        case .working:     return "Claude is working"
         case .waiting:     return "Claude needs you"
-        case .celebrating: return "Just finished cooking!"
+        case .celebrating: return "Task Finished! 🏁"
         }
     }
 

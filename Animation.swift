@@ -13,7 +13,8 @@ struct Frame {
     var poof: PoofKind? = nil
 }
 
-/// Animation table including canonical Claude Code moves and Chef Cooking sequences
+/// Animation table including canonical Claude Code moves, Chef Cooking sequences,
+/// and the Checkered Victory Flag animation from Codrops GIF.
 enum Sequences {
 
     static let frameInterval: TimeInterval = 0.060
@@ -36,8 +37,36 @@ enum Sequences {
         puff() + hold(.armsUp, 3) + hold(.standing, 1) +
         puff() + hold(.armsUp, 3) + hold(.standing, 1)
 
-    static let celebrate: [Frame] =
-        jump + hold(.standing, 3, offset: 2)
+    // MARK: Checkered Victory Flag (Task Finished — Codrops GIF Animation) 🏁
+    //
+    // From the reference GIF the mascot:
+    //  1. Gently bounces (offset 0 → -1 → 0) while alternating flag wave A / B
+    //  2. Bounces ~4 times total, smooth and steady
+    //  3. Ends by returning to standing
+    //
+    // No extreme offsets (-3, etc.) — the GIF shows only a gentle 1-cell bounce.
+
+    static let flagVictory: [Frame] =
+        // Entrance: small poof then start waving
+        hold(.standing, 2) +
+        // Wave cycle 1: gentle bounce up
+        hold(.flagHoldA, 5) +
+        hold(.flagHoldB, 5, offset: -1) +
+        // Wave cycle 2: bounce back
+        hold(.flagHoldA, 5) +
+        hold(.flagHoldB, 5, offset: -1) +
+        // Wave cycle 3
+        hold(.flagHoldA, 5) +
+        hold(.flagHoldB, 5, offset: -1) +
+        // Wave cycle 4: final wave
+        hold(.flagHoldA, 5) +
+        hold(.flagHoldB, 5, offset: -1) +
+        // Settle back
+        hold(.flagHoldA, 4) +
+        hold(.standing, 3)
+
+    /// Played when a task completes
+    static let celebrate: [Frame] = flagVictory
 
     static let spin: [Frame] =
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.lookLeft, 2) +
@@ -55,12 +84,12 @@ enum Sequences {
 
     static let chefCooking: [Frame] =
         hold(.chefStanding, 4) +
-        hold(.chefCookingA, 4, offset: -1) + // Flip food into air!
-        hold(.chefCookingB, 4) +             // Sizzle catch!
-        hold(.chefStanding, 3) +
-        hold(.chefCookingA, 4, offset: -1) + // Flip again!
+        hold(.chefCookingA, 4, offset: -1) +
         hold(.chefCookingB, 4) +
-        hold(.chefJoy, 5) +                  // Celebrate dish!
+        hold(.chefStanding, 3) +
+        hold(.chefCookingA, 4, offset: -1) +
+        hold(.chefCookingB, 4) +
+        hold(.chefJoy, 5) +
         hold(.chefStanding, 3)
 
     static let chefQuickFlip: [Frame] =
@@ -70,7 +99,7 @@ enum Sequences {
         hold(.chefStanding, 2)
 
     static func clickReaction() -> [Frame] {
-        let options = [jump, look, chefCooking]
+        let options = [jump, look, flagVictory, chefCooking]
         return options.randomElement()!
     }
 
@@ -111,7 +140,7 @@ enum Sequences {
         hold(.standing, 3, offset: 1) + hold(.standing, 3)
 
     static func idleFidget() -> [Frame] {
-        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod, chefCooking].randomElement()!
+        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod, flagVictory, chefCooking].randomElement()!
     }
 
     static func sleepFidget() -> [Frame] {
