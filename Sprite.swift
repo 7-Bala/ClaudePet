@@ -1,47 +1,46 @@
 import Cocoa
 
-// Clawd's artwork on a 24 x 15 grid of square cells.
+// Clawd's artwork on a 24 x 18 grid of square cells.
 //
-// The proportions come from Anthropic's own `Clawd-CrabWalking.gif`
-// (claude.ai/images/clawd/core/), which draws the creature on a 12 x 8 grid at
-// 100 device pixels per cell. This is that layout at double resolution, which
-// buys two things the 12-wide version could not have:
-//
-//   * legs one cell wide instead of two, so they read as four distinct points
-//     rather than merging into a single block, and
-//   * eyes that stay square (2x2) with a clear band of body above them.
-//
-// Everything is square — do not reintroduce the terminal's 1:2 pixel aspect.
+// Grid supports standard Clawd poses as well as Chef attire & cooking animations
+// inspired by the Claude Code "Desktop creatures, built with Claude Code" reel.
 
 enum Pose {
     case standing
     case lookLeft
     case lookRight
     case armsUp
-    case asleep     // eyes closed
-    case walkA      // right pair lifted
-    case walkB      // left pair lifted
-    case squat      // legs folded under, for the idle sit
+    case asleep         // eyes closed
+    case walkA          // right pair lifted
+    case walkB          // left pair lifted
+    case squat          // legs folded under, for the idle sit
+    case chefStanding   // wearing chef hat with pan & spatula
+    case chefCookingA   // flipping food into the air with steam
+    case chefCookingB   // catching food in pan with sizzle
+    case chefJoy        // chef arms up celebrating dish
 }
 
 enum ClawdSprite {
 
     static let cols = 24
-    static let rows = 15
+    static let rows = 18
 
-    /// rgb(217,119,87) — sampled straight out of the reference GIF's colour table.
-    static let bodyColor = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 1.0)
-    static let eyeColor  = NSColor.black
-    static let poofColor = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 0.45)
+    /// Color palette
+    static let bodyColor    = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 1.0)
+    static let eyeColor     = NSColor.black
+    static let poofColor    = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 0.45)
+    static let hatColor     = NSColor(srgbRed: 0.98, green: 0.98, blue: 0.98, alpha: 1.0)
+    static let hatBandColor = NSColor(srgbRed: 0.82, green: 0.82, blue: 0.85, alpha: 1.0)
+    static let metalColor   = NSColor(srgbRed: 0.35, green: 0.35, blue: 0.40, alpha: 1.0)
+    static let foodColor    = NSColor(srgbRed: 1.0,  green: 0.72, blue: 0.20, alpha: 1.0)
+    static let steamColor   = NSColor(srgbRed: 1.0,  green: 1.0,  blue: 1.0,  alpha: 0.65)
 
-    // '#' = body, '0' = eye, '.' = transparent. Every row is exactly 24 characters.
-    //
-    // Body block spans cols 4-19 of rows 0-11. Arms are the full 24-wide band on
-    // rows 4-7. Feet are four two-cell-wide, three-cell-tall blocks at cols 5, 8,
-    // 15 and 18 — two close pairs with a wide centre gap. They are deliberately
-    // compact and chunky: never long, thin stick legs. Eyes are 2x2 at rows 2-3.
+    private static let padRow = "........................"
+
+    // '#' = body, '0' = eye, 'W' = chef hat, 'B' = hat band, 'S' = pan/spatula, 'F' = food, 'm' = steam, '.' = transparent
 
     private static let standingGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -59,8 +58,8 @@ enum ClawdSprite {
         ".....##.##.....##.##....",
     ]
 
-    // Gaze shifts two cells within the face; the eyes never touch the top edge.
     private static let lookLeftGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "....00########00####....",
@@ -79,6 +78,7 @@ enum ClawdSprite {
     ]
 
     private static let lookRightGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "....####00########00....",
@@ -96,8 +96,8 @@ enum ClawdSprite {
         ".....##.##.....##.##....",
     ]
 
-    // Arms lift two rows, from rows 4-7 up to rows 2-5.
     private static let armsUpGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "######00########00######",
@@ -116,6 +116,7 @@ enum ClawdSprite {
     ]
 
     private static let asleepGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "....################....",
@@ -133,8 +134,8 @@ enum ClawdSprite {
         ".....##.##.....##.##....",
     ]
 
-    // The stride from the crab-walk GIF: one pair planted, the other lifted clear.
     private static let walkAGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -153,6 +154,7 @@ enum ClawdSprite {
     ]
 
     private static let walkBGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -170,8 +172,8 @@ enum ClawdSprite {
         "...............##.##....",
     ]
 
-    /// Legs folded right up — Clawd sitting down during a long idle.
     private static let squatGrid = [
+        padRow, padRow, padRow,
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -187,22 +189,111 @@ enum ClawdSprite {
         ".....##.##.....##.##....",
         "........................",
         "........................",
+    ]
+
+    // MARK: Chef Poses (Attire & Cooking Animation)
+
+    private static let chefStandingGrid = [
+        "......WWWWWWWWWW........",
+        ".....WWWWWWWWWWWW.......",
+        ".......BBBBBBBB.........",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "########################",
+        "##################SSS...",
+        "#################SSSS...",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
+    ]
+
+    private static let chefCookingAGrid = [
+        "......WWWWWWWWWW...FF...",  // Food flipped into air!
+        ".....WWWWWWWWWWWW..mm...",  // Steam
+        ".......BBBBBBBB.........",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "##################SSSS..",  // Pan flipped up
+        "#################SSSS...",
+        "#################SSSS...",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
+    ]
+
+    private static let chefCookingBGrid = [
+        "......WWWWWWWWWW........",
+        ".....WWWWWWWWWWWW.......",
+        ".......BBBBBBBB.........",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "##################FF....",  // Food back in pan!
+        "##################mm....",  // Sizzle steam
+        "#################SSSS...",  // Pan
+        "#################SSSS...",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
+    ]
+
+    private static let chefJoyGrid = [
+        "......WWWWWWWWWW........",
+        ".....WWWWWWWWWWWW.......",
+        ".......BBBBBBBB.........",
+        "....################....",
+        "....################....",
+        "######00########00######",
+        "######00########00######",
+        "########################",
+        "##################FF....",
+        "##################mm....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
+        ".....##.##.....##.##....",
     ]
 
     static func grid(for pose: Pose) -> [String] {
         switch pose {
-        case .standing:  return standingGrid
-        case .lookLeft:  return lookLeftGrid
-        case .lookRight: return lookRightGrid
-        case .armsUp:    return armsUpGrid
-        case .asleep:    return asleepGrid
-        case .walkA:     return walkAGrid
-        case .walkB:     return walkBGrid
-        case .squat:     return squatGrid
+        case .standing:     return standingGrid
+        case .lookLeft:     return lookLeftGrid
+        case .lookRight:    return lookRightGrid
+        case .armsUp:       return armsUpGrid
+        case .asleep:       return asleepGrid
+        case .walkA:        return walkAGrid
+        case .walkB:        return walkBGrid
+        case .squat:        return squatGrid
+        case .chefStanding: return chefStandingGrid
+        case .chefCookingA:  return chefCookingAGrid
+        case .chefCookingB:  return chefCookingBGrid
+        case .chefJoy:       return chefJoyGrid
         }
     }
 
-    /// Draws Clawd with hard pixel edges. `cell` is one art pixel in points.
+    /// Draws Clawd with hard pixel edges.
     static func draw(in ctx: CGContext,
                      pose: Pose,
                      originX: CGFloat,
@@ -210,29 +301,65 @@ enum ClawdSprite {
                      cell: CGFloat) {
         let g = grid(for: pose)
 
-        var bodyRects: [CGRect] = []
-        var eyeRects: [CGRect] = []
-        bodyRects.reserveCapacity(cols * rows)
+        var bodyRects: [CGRect]     = []
+        var eyeRects: [CGRect]      = []
+        var hatRects: [CGRect]      = []
+        var hatBandRects: [CGRect]  = []
+        var metalRects: [CGRect]    = []
+        var foodRects: [CGRect]     = []
+        var steamRects: [CGRect]    = []
 
         for (r, row) in g.enumerated() {
-            // Row 0 is the top of the sprite; view coordinates grow upward.
             let y = originY + CGFloat(rows - 1 - r) * cell
             for (c, ch) in row.enumerated() {
                 guard ch != "." else { continue }
                 let rect = CGRect(x: originX + CGFloat(c) * cell, y: y, width: cell, height: cell)
-                if ch == "0" { eyeRects.append(rect) } else { bodyRects.append(rect) }
+                switch ch {
+                case "0": eyeRects.append(rect)
+                case "W": hatRects.append(rect)
+                case "B": hatBandRects.append(rect)
+                case "S": metalRects.append(rect)
+                case "F": foodRects.append(rect)
+                case "m": steamRects.append(rect)
+                default:  bodyRects.append(rect)
+                }
             }
         }
 
         ctx.setFillColor(bodyColor.cgColor)
         ctx.fill(bodyRects)
+
         if !eyeRects.isEmpty {
             ctx.setFillColor(eyeColor.cgColor)
             ctx.fill(eyeRects)
         }
+
+        if !hatRects.isEmpty {
+            ctx.setFillColor(hatColor.cgColor)
+            ctx.fill(hatRects)
+        }
+
+        if !hatBandRects.isEmpty {
+            ctx.setFillColor(hatBandColor.cgColor)
+            ctx.fill(hatBandRects)
+        }
+
+        if !metalRects.isEmpty {
+            ctx.setFillColor(metalColor.cgColor)
+            ctx.fill(metalRects)
+        }
+
+        if !foodRects.isEmpty {
+            ctx.setFillColor(foodColor.cgColor)
+            ctx.fill(foodRects)
+        }
+
+        if !steamRects.isEmpty {
+            ctx.setFillColor(steamColor.cgColor)
+            ctx.fill(steamRects)
+        }
     }
 
-    /// The little puffs Claude Code draws either side of Clawd when it hops.
     static func drawPoof(in ctx: CGContext,
                          kind: PoofKind,
                          originX: CGFloat,
