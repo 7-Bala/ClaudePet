@@ -26,6 +26,13 @@ final class ClawdView: NSView {
 
     // MARK: State
 
+    /// Which animation is locked into a permanent loop (nil = normal mood-based loop).
+    private enum LockedLoop: Equatable {
+        case flagVictory
+        case chefCooking
+    }
+    private var lockedLoop: LockedLoop? = nil
+
     private let animator = Animator()
     private let monitor = TaskMonitor()
 
@@ -113,6 +120,10 @@ final class ClawdView: NSView {
         mood = newMood
         endTravel()
         scheduleNextFidget()
+
+        // If a locked loop is active, keep it — don't let mood override.
+        if lockedLoop != nil { return }
+
         switch newMood {
         case .asleep:
             animator.setLoop(Sequences.sleeping)
@@ -126,6 +137,24 @@ final class ClawdView: NSView {
         case .celebrating:
             animator.setLoop(Sequences.idle)
             nextMoveAt = .distantFuture
+        }
+    }
+
+    /// Applies or clears a locked animation loop.
+    private func applyLockedLoop() {
+        switch lockedLoop {
+        case .flagVictory:
+            animator.setLoop(Sequences.flagVictory)
+        case .chefCooking:
+            animator.setLoop(Sequences.chefCooking)
+        case nil:
+            // Restore the normal mood-based loop.
+            switch mood {
+            case .asleep:      animator.setLoop(Sequences.sleeping)
+            case .working:     animator.setLoop(Sequences.working)
+            case .waiting:     animator.setLoop(Sequences.asking)
+            case .celebrating: animator.setLoop(Sequences.idle)
+            }
         }
     }
 
@@ -375,12 +404,14 @@ final class ClawdView: NSView {
         }
 
         menu.addItem(.separator())
-        let flagItem = NSMenuItem(title: "Wave Victory Flag 🏁", action: #selector(triggerFlagVictory), keyEquivalent: "")
+        let flagItem = NSMenuItem(title: "Wave Victory Flag 🏁", action: #selector(toggleFlagVictory), keyEquivalent: "")
         flagItem.target = self
+        flagItem.state = (lockedLoop == .flagVictory) ? .on : .off
         menu.addItem(flagItem)
 
-        let cookItem = NSMenuItem(title: "Cook Dish 👨‍🍳🔥", action: #selector(triggerChefCooking), keyEquivalent: "")
+        let cookItem = NSMenuItem(title: "Cook Dish 👨‍🍳🔥", action: #selector(toggleChefCooking), keyEquivalent: "")
         cookItem.target = self
+        cookItem.state = (lockedLoop == .chefCooking) ? .on : .off
         menu.addItem(cookItem)
 
         menu.addItem(.separator())
@@ -396,12 +427,14 @@ final class ClawdView: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
-    @objc private func triggerFlagVictory() {
-        animator.play(Sequences.flagVictory, minimumGap: 0)
+    @objc private func toggleFlagVictory() {
+        lockedLoop = (lockedLoop == .flagVictory) ? nil : .flagVictory
+        applyLockedLoop()
     }
 
-    @objc private func triggerChefCooking() {
-        animator.play(Sequences.chefCooking, minimumGap: 0)
+    @objc private func toggleChefCooking() {
+        lockedLoop = (lockedLoop == .chefCooking) ? nil : .chefCooking
+        applyLockedLoop()
     }
 
     private func statusLine() -> String {
