@@ -1,0 +1,14 @@
+# Build artifacts
+ClawdPet.app/
+*.o
+*.dSYM
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# User state / local files
+.clawdpet/
+state.json
