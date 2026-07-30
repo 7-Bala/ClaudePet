@@ -24,15 +24,16 @@ enum Pose {
     case lookLeft
     case lookRight
     case armsUp
-    case asleep       // eyes closed
-    case walkA        // legs 1 & 3 planted
-    case walkB        // legs 2 & 4 planted
-    case squat        // legs folded under, for the idle sit
-    case hatForming    // chef hat mid-poof, just starting to appear
-    case hatOn         // chef hat fully on, hands empty
-    case chefIdle      // hat + pan, food resting in the pan
-    case chefFlipUp    // hat + pan, food tossed up in the air
-    case chefCatch     // hat + pan, food falling back toward the pan
+    case asleep        // eyes closed
+    case walkA         // legs 1 & 3 planted
+    case walkB         // legs 2 & 4 planted
+    case squat         // legs folded under, for the idle sit
+    case hatPlacing     // arms raised, physically putting the hat on (or taking it off)
+    case hatOn          // hat settled, arms back down, hands empty
+    case chefIdle       // hat + pan held at arm height, food resting
+    case chefRaiseLeft  // tossing: arm swings up and to the left
+    case chefRaiseRight // tossing: arm swings up and to the right
+    case chefPeak        // tossing: food airborne at the top of the arc, pan retracted
 }
 
 enum ClawdSprite {
@@ -226,28 +227,32 @@ enum ClawdSprite {
 
     // ── Chef costume ─────────────────────────────────────────────────────
     //
-    // Rows 3-9 and 14-17 are byte-for-byte identical to `standingGrid` in
-    // every one of these poses — head, eyes, legs and both arm nubs never
-    // move a single pixel when the costume goes on, comes off, or the pan
-    // starts flipping food. Only three regions ever change: rows 0-2 (the
-    // hat), and rows 9-12's last 4 columns (the pan and the food).
+    // Two changes from the previous version, both direct corrections:
     //
-    // The pan sits low, hanging off the lower body with a one-row gap below
-    // the normal right arm nub — traced from the reel, where the pan reads
-    // as a separate item the arm is holding rather than an extension of it.
+    // 1. The pan now sits at rows 6-9 — the SAME rows the right arm nub
+    //    normally occupies — instead of hanging below the body. It reads as
+    //    something the hand is holding, not a separate floating object.
+    // 2. Nothing here ever changes row offset. Earlier the toss lifted the
+    //    whole body (`offset: -1`), which read as Clawd jumping. The head,
+    //    body and legs are byte-for-byte identical to `standingGrid` in
+    //    every one of these poses — only the pan-hand's own pixels move.
+    //    The illusion of a wrist-flick toss comes entirely from the pan and
+    //    food climbing rows 6 → 5 → 4 → 2 while everything else holds still.
 
-    // A small grey blob just starting to form above the head.
-    private static let hatFormingGrid = [
-        "........................",
-        ".........ww.............",
+    // Arms raised, hat visible above — the physical "putting it on" gesture,
+    // built on top of `armsUpGrid` rather than `standingGrid` since the arms
+    // need to actually be up. Reused in reverse for taking the hat back off.
+    private static let hatPlacingGrid = [
+        "........WWWWWW..........",
+        "......WWWWWWWWWWWW......",
+        "....wwwwwwwwwwwwwwww....",
+        "....################....",
+        "######00########00######",
+        "######00########00######",
+        "########################",
+        "########################",
         "....################....",
         "....################....",
-        "....##00########00##....",
-        "....##00########00##....",
-        "########################",
-        "########################",
-        "########################",
-        "########################",
         "....################....",
         "....################....",
         "....################....",
@@ -258,9 +263,7 @@ enum ClawdSprite {
         "....##..##....##..##....",
     ]
 
-    // Hat fully poofed: a rounded top, a wide mid band, and a flat brim lip
-    // that sits right at the hairline — replacing just the top pixel row of
-    // the head, so the head's height and eye position never move.
+    // Hat settled, arms back down, hands empty — no pan yet.
     private static let hatOnGrid = [
         "........WWWWWW..........",
         "......WWWWWWWWWWWW......",
@@ -282,9 +285,8 @@ enum ClawdSprite {
         "....##..##....##..##....",
     ]
 
-    // Hat on, pan hanging below the right arm, food resting in it. Food and
-    // pan share column 22 all the way down so the toss below reads as one
-    // straight vertical bounce with no horizontal drift.
+    // Resting: pan held right where the right arm normally is, food sitting
+    // calmly on top of it. Nothing below row 9 — the pan doesn't hang.
     private static let chefIdleGrid = [
         "........WWWWWW..........",
         "......WWWWWWWWWWWW......",
@@ -292,59 +294,86 @@ enum ClawdSprite {
         "....################....",
         "....##00########00##....",
         "....##00########00##....",
-        "########################",
-        "########################",
-        "########################",
-        "########################",
+        "####################..G.",
+        "####################.SSS",
+        "####################.SSS",
+        "####################....",
         "....################....",
-        "....################..G.",
-        "....################.SSS",
-        "....################.SSS",
+        "....################....",
+        "....################....",
+        "....################....",
         "....##..##....##..##....",
         "....##..##....##..##....",
         "....##..##....##..##....",
         "....##..##....##..##....",
     ]
 
-    // Food tossed up off the pan — high enough to pass in front of the arm
-    // nub, which is why this is the one frame that borrows a pixel from row 9.
-    private static let chefFlipUpGrid = [
+    // Wrist flicks up and to the left: pan and food climb into the (normally
+    // blank) eye-row band, and the resting-row pixels empty out — the hand
+    // has lifted away from where it sits at idle.
+    private static let chefRaiseLeftGrid = [
         "........WWWWWW..........",
         "......WWWWWWWWWWWW......",
         "....wwwwwwwwwwwwwwww....",
         "....################....",
-        "....##00########00##....",
-        "....##00########00##....",
-        "########################",
-        "########################",
-        "########################",
-        "######################G#",
+        "....##00########00##G...",
+        "....##00########00##SS..",
+        "####################.S..",
+        "####################....",
+        "####################....",
+        "####################....",
         "....################....",
         "....################....",
-        "....################.SSS",
-        "....################.SSS",
+        "....################....",
+        "....################....",
         "....##..##....##..##....",
         "....##..##....##..##....",
         "....##..##....##..##....",
         "....##..##....##..##....",
     ]
 
-    // Food on its way back down, passing the empty pan.
-    private static let chefCatchGrid = [
+    // Mirror of the above, swung to the right — alternating left/right across
+    // a cook loop is what reads as a genuine sideways toss instead of a
+    // straight up-down bounce.
+    private static let chefRaiseRightGrid = [
         "........WWWWWW..........",
         "......WWWWWWWWWWWW......",
         "....wwwwwwwwwwwwwwww....",
         "....################....",
-        "....##00########00##....",
-        "....##00########00##....",
-        "########################",
-        "########################",
-        "########################",
-        "########################",
-        "....################..G.",
+        "....##00########00##...G",
+        "....##00########00##..SS",
+        "####################..S.",
+        "####################....",
+        "####################....",
+        "####################....",
         "....################....",
-        "....################.SSS",
-        "....################.SSS",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
+    // Peak of the toss: the food separates from the pan entirely and rises
+    // to hat height (row 2, which is otherwise the brim's own blank margin),
+    // while the pan itself has retracted almost all the way back down.
+    private static let chefPeakGrid = [
+        "........WWWWWW..........",
+        "......WWWWWWWWWWWW......",
+        "....wwwwwwwwwwwwwwww..G.",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##..S.",
+        "####################....",
+        "####################....",
+        "####################....",
+        "####################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
         "....##..##....##..##....",
         "....##..##....##..##....",
         "....##..##....##..##....",
@@ -360,12 +389,13 @@ enum ClawdSprite {
         case .asleep:      return asleepGrid
         case .walkA:       return walkAGrid
         case .walkB:       return walkBGrid
-        case .squat:       return squatGrid
-        case .hatForming:  return hatFormingGrid
-        case .hatOn:       return hatOnGrid
-        case .chefIdle:    return chefIdleGrid
-        case .chefFlipUp:  return chefFlipUpGrid
-        case .chefCatch:   return chefCatchGrid
+        case .squat:            return squatGrid
+        case .hatPlacing:       return hatPlacingGrid
+        case .hatOn:            return hatOnGrid
+        case .chefIdle:         return chefIdleGrid
+        case .chefRaiseLeft:    return chefRaiseLeftGrid
+        case .chefRaiseRight:   return chefRaiseRightGrid
+        case .chefPeak:         return chefPeakGrid
         }
     }
 

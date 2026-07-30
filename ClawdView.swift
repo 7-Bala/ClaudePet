@@ -1,8 +1,8 @@
 import Cocoa
 
 /// Renders Clawd and owns its behaviour: reacting to Claude Code activity,
-/// strolling along the Dock, idling with personality, and putting on its chef
-/// costume to cook while a task is running.
+/// idling with personality, and putting on its chef costume to cook
+/// continuously for as long as a task is running.
 final class ClawdView: NSView {
 
     // MARK: Layout
@@ -37,11 +37,17 @@ final class ClawdView: NSView {
     /// tool call to trigger it.
     private var testCookingLoop = false
 
+    /// True from the moment the hat-on transition starts until the hat-off
+    /// transition finishes. This is what lets the costume go on exactly once
+    /// at the start of a task and come off exactly once when it ends, rather
+    /// than replaying the whole put-on/take-off cycle for every tool call —
+    /// which is what made it read as an obviously looping clip before.
+    private var costumeOn = false
+
+    /// Horizontal position. Clawd stays put above the Dock — it moves only
+    /// when dragged or when hopping in place — so this is the sole owner of
+    /// the window's x, with no separate wandering system to fight it.
     private var posX: CGFloat = 0
-    private var travelRemaining: CGFloat = 0
-    private var travelSpeed: CGFloat = 0
-    private var isStrolling = false
-    private var nextMoveAt: Date = .distantFuture
 
     private var elevation: CGFloat = 0
     private var verticalVelocity: CGFloat = 0
@@ -83,44 +89,49 @@ final class ClawdView: NSView {
     // MARK: Behaviour
 
     private func react(to event: String, tool: String?) {
+        // Costume transitions (below, in moodChanged) always take priority
+        // over these — they use playImmediately so a decorative reaction
+        // here can never win a same-tick race and eat the hat-on/off cue.
         switch event {
-        case "Stop", "StopFailure":
-            animator.play(Sequences.celebrate)
-        case "UserPromptSubmit", "SessionStart":
-            animator.play(Sequences.excited)
         case "SubagentStart", "SubagentStop":
             animator.play(Sequences.spin)
         case "PostToolUseFailure":
             animator.play(Sequences.flinch)
-        case "PreToolUse":
-            animator.play(reaction(for: tool))
+        case "PreToolUse" where tool == "AskUserQuestion" || tool == "ExitPlanMode":
+            animator.play(Sequences.asking)
         default:
             break
         }
     }
 
-    private func reaction(for tool: String?) -> [Frame] {
-        switch tool {
-        case "Bash", "Edit", "Write", "NotebookEdit":
-            return Sequences.cookMeal
-        case "Read", "Grep", "Glob", "WebFetch", "WebSearch":
-            return Sequences.cookFlip
-        case "Task", "Agent":
-            return Sequences.spin
-        case "AskUserQuestion", "ExitPlanMode":
-            return Sequences.asking
-        default:
-            return Sequences.cookFlip
-        }
+    /// Puts the costume on, if it isn't already, then leaves the continuous
+    /// cook loop running behind it.
+    private func enterCooking() {
+        guard !costumeOn else { return }
+        costumeOn = true
+        animator.setLoop(Sequences.cookLoop)
+        animator.playImmediately(Sequences.hatOnTransition)
     }
 
-    /// The loop that should be playing right now, honouring the testing
-    /// override if it's on.
+    /// Takes the costume off, if it's on, then settles into whatever loop
+    /// should play once it's gone.
+    private func exitCooking(thenLoop: [Frame]) {
+        guard costumeOn else {
+            animator.setLoop(thenLoop)
+            return
+        }
+        costumeOn = false
+        animator.setLoop(thenLoop)
+        animator.playImmediately(Sequences.hatOffTransition)
+    }
+
+    /// What should be playing right now given the real mood — used when the
+    /// testing toggle switches off to hand control back cleanly.
     private func loopForCurrentState() -> [Frame] {
-        if testCookingLoop { return Sequences.cookMeal }
+        if testCookingLoop || costumeOn { return Sequences.cookLoop }
         switch mood {
         case .asleep:      return Sequences.sleeping
-        case .working:     return Sequences.working
+        case .working:     return Sequences.cookLoop
         case .waiting:     return Sequences.asking
         case .celebrating: return Sequences.idle
         }
@@ -128,25 +139,33 @@ final class ClawdView: NSView {
 
     private func moodChanged(to newMood: Mood) {
         mood = newMood
-        endTravel()
         scheduleNextFidget()
-        animator.setLoop(loopForCurrentState())
 
-        if newMood == .working, !testCookingLoop {
-            scheduleNextMove()
-        } else {
-            nextMoveAt = .distantFuture
+        // The testing toggle owns the costume while it's on — a real mood
+        // change underneath it shouldn't touch the animation.
+        guard !testCookingLoop else { return }
+
+        switch newMood {
+        case .working:
+            enterCooking()
+        case .asleep:
+            exitCooking(thenLoop: Sequences.sleeping)
+        case .waiting:
+            exitCooking(thenLoop: Sequences.asking)
+        case .celebrating:
+            exitCooking(thenLoop: Sequences.idle)
         }
     }
 
     @objc private func toggleCookingTest() {
         testCookingLoop.toggle()
-        endTravel()
-        animator.setLoop(loopForCurrentState())
-    }
-
-    private func scheduleNextMove() {
-        nextMoveAt = Date().addingTimeInterval(Double.random(in: 2.0...5.0))
+        if testCookingLoop {
+            enterCooking()
+        } else if mood != .working {
+            // If a real task is genuinely running, leave the costume on —
+            // only drop it here if there's no real reason for it anymore.
+            exitCooking(thenLoop: loopForCurrentState())
+        }
     }
 
     private func scheduleNextFidget() {
@@ -154,21 +173,16 @@ final class ClawdView: NSView {
     }
 
     private func maybeFidget(now: Date) {
-        guard !testCookingLoop else { return }
-        guard now >= nextFidgetAt, !animator.isBusy, !isHeld,
-              elevation == 0, travelRemaining == 0 else { return }
+        // The continuous cook loop already has something happening on
+        // screen — idle fidgets are only for when Clawd is genuinely idle.
+        guard !testCookingLoop, !costumeOn else { return }
+        guard now >= nextFidgetAt, !animator.isBusy, !isHeld, elevation == 0 else { return }
         scheduleNextFidget()
 
-        switch mood {
-        case .asleep:
-            animator.play(Double.random(in: 0...1) < 0.65
-                          ? Sequences.sleepFidget()
-                          : Sequences.idleFidget())
-        case .working:
-            animator.play(Sequences.cookFlip)
-        case .waiting, .celebrating:
-            break
-        }
+        guard mood == .asleep else { return }
+        animator.play(Double.random(in: 0...1) < 0.65
+                      ? Sequences.sleepFidget()
+                      : Sequences.idleFidget())
     }
 
     // MARK: Tick
@@ -183,14 +197,8 @@ final class ClawdView: NSView {
 
         animator.advance(by: dt)
 
-        updateTravel(dt: CGFloat(dt))
         stepPhysics(dt: CGFloat(dt))
         maybeFidget(now: now)
-
-        if mood == .working, !testCookingLoop, !animator.isBusy, !isHeld, elevation == 0,
-           travelRemaining == 0, now >= nextMoveAt {
-            Bool.random() ? startStroll() : startSkip()
-        }
 
         if landingCrouch > 0 { landingCrouch -= 1 }
         redrawIfNeeded()
@@ -202,55 +210,6 @@ final class ClawdView: NSView {
         guard let window = window, let screen = window.screen ?? NSScreen.main else { return (0, 0) }
         let maxX = max(screen.frame.minX, screen.frame.maxX - window.frame.width)
         return (screen.frame.minX, maxX)
-    }
-
-    private func pickDirection(travel: CGFloat) -> CGFloat {
-        let bounds = horizontalBounds()
-        if posX + travel > bounds.max { return -1 }
-        if posX - travel < bounds.min { return 1 }
-        return Bool.random() ? 1 : -1
-    }
-
-    private func startStroll() {
-        let distance = CGFloat.random(in: 50...150)
-        travelRemaining = distance * pickDirection(travel: distance)
-        travelSpeed = 34
-        isStrolling = true
-        animator.setLoop(Sequences.walk)
-        scheduleNextMove()
-    }
-
-    private func startSkip() {
-        let distance = 10 * cellSize
-        travelRemaining = distance * pickDirection(travel: distance)
-        travelSpeed = distance / CGFloat(Sequences.skipDuration)
-        isStrolling = false
-        animator.play(Sequences.skip)
-        scheduleNextMove()
-    }
-
-    private func updateTravel(dt: CGFloat) {
-        guard travelRemaining != 0 else { return }
-        if isHeld || elevation > 0 { endTravel(); return }
-
-        let step = travelSpeed * dt * (travelRemaining < 0 ? -1 : 1)
-        let applied = abs(step) >= abs(travelRemaining) ? travelRemaining : step
-        posX += applied
-        travelRemaining -= applied
-
-        let bounds = horizontalBounds()
-        if posX <= bounds.min || posX >= bounds.max { travelRemaining = 0 }
-        applyPosition()
-
-        if travelRemaining == 0 { endTravel() }
-    }
-
-    private func endTravel() {
-        travelRemaining = 0
-        if isStrolling {
-            isStrolling = false
-            animator.setLoop(loopForCurrentState())
-        }
     }
 
     // MARK: Vertical movement
@@ -349,7 +308,6 @@ final class ClawdView: NSView {
     override func mouseDown(with event: NSEvent) {
         didDrag = false
         isHeld = true
-        endTravel()
         verticalVelocity = 0
         dragOriginMouse = NSEvent.mouseLocation
         dragOriginWindow = window?.frame.origin ?? .zero

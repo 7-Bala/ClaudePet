@@ -14,8 +14,8 @@ struct Frame {
 }
 
 /// Claude Code's own animation table, reproduced frame for frame, a chef
-/// cooking sequence traced from Anthropic's "Desktop creatures" reel, and a
-/// set of idle fidgets so Clawd has something to do when nothing is happening.
+/// costume sequence, and a set of idle fidgets so Clawd has something to do
+/// when nothing is happening.
 enum Sequences {
 
     static let frameInterval: TimeInterval = 0.060
@@ -46,62 +46,57 @@ enum Sequences {
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.lookLeft, 2) +
         hold(.armsUp, 3) + hold(.standing, 1)
 
-    /// Three hops in a row. Sideways travel is driven by the view, not by
-    /// per-frame offsets, so the sprite never draws outside its window.
-    static let skip: [Frame] =
-        hold(.standing, 1, offset: 2) + hold(.armsUp, 2) + hold(.standing, 1) +
-        hold(.standing, 1, offset: 2) + hold(.armsUp, 2) + hold(.standing, 1) +
-        hold(.standing, 1, offset: 2) + hold(.armsUp, 2) + puff() +
-        hold(.standing, 1)
-
-    static let skipDuration: TimeInterval = TimeInterval(skip.count) * frameInterval
-
-    // MARK: From the crab-walk GIF
-
-    /// Legs alternate while the body bobs. Four steps per loop.
-    static let walk: [Frame] =
-        hold(.walkA, 3, offset: 1) + hold(.standing, 2) +
-        hold(.walkB, 3, offset: 1) + hold(.standing, 2)
-
-    // MARK: Chef cooking — traced from the "Desktop creatures" reel
-    //
-    // The reel's sequence, frame by frame: plain -> hat poofs in over a
-    // couple of frames -> settles with a tiny hop -> pan appears already
-    // mid-flip -> the food arcs up and lands back in the pan, repeated a
-    // few times -> pan is put away -> hat comes off -> back to plain.
-    // Every stage here plays that out at the same beat.
-
-    private static let hatOn: [Frame] =
-        hold(.hatForming, 3) +
-        hold(.hatOn, 4) +
-        hold(.hatOn, 3, offset: 1)   // the little settling hop
-
-    private static let hatOff: [Frame] =
-        hold(.hatOn, 3, offset: 1) + hold(.hatForming, 3) + hold(.standing, 2)
-
-    /// One toss of the food: up, hang, and back down into the pan.
-    private static let flip: [Frame] =
-        hold(.chefIdle, 2) +
-        hold(.chefFlipUp, 3, offset: -1) +
-        hold(.chefFlipUp, 2) +
-        hold(.chefCatch, 3) +
-        hold(.chefIdle, 3)
-
-    /// The full costume change: hat on, cook for a few tosses, hat off.
-    static let cookMeal: [Frame] =
-        hatOn +
-        flip + flip + flip +
-        hold(.chefIdle, 4) +
-        hatOff
-
-    /// A shorter version for reactions that shouldn't hijack the animation
-    /// for a full two seconds — one toss only, hat stays on throughout.
-    static let cookFlip: [Frame] =
-        hold(.hatOn, 2) + flip + hold(.hatOn, 2)
-
     /// Clicking Clawd in Claude Code plays one of these at random.
     static func clickReaction() -> [Frame] {
         Bool.random() ? jump : look
+    }
+
+    // MARK: Chef costume
+    //
+    // Two things changed here based on watching it happen: putting the hat
+    // on is a real gesture — arms rise (`hatPlacing`, which is `armsUp`'s
+    // body with the hat drawn on top) and come back down with the hat
+    // settled (`hatOn`) — and the body never moves during a toss. The old
+    // version lifted the whole sprite (`offset: -1`) to sell the flip, which
+    // read as a jump. Now only the pan-hand's own pixels climb from the
+    // resting row up through the eye-row band to hat height and back; the
+    // head, body and legs hold perfectly still throughout.
+    //
+    // These are one-shots meant to be played exactly once at the moment the
+    // costume goes on or comes off — see ClawdView's costumeOn tracking.
+
+    static let hatOnTransition: [Frame] =
+        hold(.hatPlacing, 6) + hold(.hatOn, 3)
+
+    static let hatOffTransition: [Frame] =
+        hold(.hatOn, 2) + hold(.hatPlacing, 6) + hold(.standing, 3)
+
+    /// One toss, swung to the left: pan and food climb from the resting row
+    /// up to hat height, hang a moment, then come back down.
+    private static let tossLeft: [Frame] =
+        hold(.chefIdle, 4) +
+        hold(.chefRaiseLeft, 3) +
+        hold(.chefPeak, 4) +
+        hold(.chefRaiseLeft, 3)
+
+    /// Same toss, mirrored to the right. Alternating the two in the loop
+    /// below is what makes it read as a real sideways flip rather than a
+    /// straight up-down bounce that would obviously be looping.
+    private static let tossRight: [Frame] =
+        hold(.chefIdle, 4) +
+        hold(.chefRaiseRight, 3) +
+        hold(.chefPeak, 4) +
+        hold(.chefRaiseRight, 3)
+
+    /// The continuous cooking loop. Assumes the hat and pan are already on —
+    /// this is what plays for as long as the pan is out, whether that's one
+    /// second or ten minutes, with no fixed length of its own to notice.
+    static let cookLoop: [Frame] = tossLeft + tossRight
+
+    /// One toss picked at random, for reactions that shouldn't hijack the
+    /// loop for long but also shouldn't always look identical.
+    static func cookFlip() -> [Frame] {
+        Bool.random() ? tossLeft : tossRight
     }
 
     // MARK: Idle fidgets — the personality
@@ -141,8 +136,10 @@ enum Sequences {
         hold(.standing, 3, offset: 1) + hold(.standing, 3)
 
     /// Picked at random whenever Clawd has been standing still for a while.
+    /// Only used while asleep/idle — never while the pan is out, since the
+    /// continuous cook loop already has something happening on screen.
     static func idleFidget() -> [Frame] {
-        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod, cookFlip].randomElement()!
+        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod].randomElement()!
     }
 
     /// Twitches in its sleep.
@@ -162,11 +159,6 @@ enum Sequences {
     static let idle: [Frame] =
         hold(.standing, 14) + hold(.standing, 10, offset: 1)
 
-    /// Busier loop, played while a turn is in flight — cooking, since that's
-    /// what "Claude is working" looks like on the reel.
-    static let working: [Frame] =
-        hatOn + flip + flip + hold(.chefIdle, 6) + flip
-
     /// Deliberately unlike anything in the working set: Clawd waves both arms,
     /// bounces, then tilts its head at you. Loops until you answer.
     static let asking: [Frame] =
@@ -178,15 +170,8 @@ enum Sequences {
 
     // MARK: Reactions
 
-    static let excited: [Frame] =
-        hold(.armsUp, 2) + hold(.standing, 1) + hold(.armsUp, 2) + hold(.standing, 1) +
-        hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.standing, 2)
-
     static let flinch: [Frame] =
         hold(.standing, 2, offset: 2) + hold(.lookLeft, 2) + hold(.lookRight, 2) +
-        hold(.standing, 2, offset: 2) + hold(.standing, 2)
-
-    static let bob: [Frame] =
         hold(.standing, 2, offset: 2) + hold(.standing, 2)
 }
 
@@ -239,6 +224,19 @@ final class Animator {
         accumulated = 0
         current = frames[0]
         return true
+    }
+
+    /// Like `play`, but takes priority over any in-flight one-shot instead of
+    /// being dropped by it. Used for the hat on/off transitions, which must
+    /// never silently lose a race against an incidental reaction animation.
+    func playImmediately(_ frames: [Frame]) {
+        guard !frames.isEmpty else { return }
+        lastOneShotStarted = Date()
+        sequence = frames
+        isOneShot = true
+        index = 0
+        accumulated = 0
+        current = frames[0]
     }
 
     func advance(by dt: TimeInterval) {
