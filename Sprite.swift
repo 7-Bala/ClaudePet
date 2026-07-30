@@ -1,12 +1,33 @@
 import Cocoa
 
 // Clawd's artwork on a 32 x 19 grid of square cells, plus a chef hat + pan
-// costume. This is a visual-correction pass on the cooking animation
-// specifically — see the pixel-art generator this file's grid data was
-// derived from for the full design rationale (arm/pan geometry, eye-state
-// mapping, food trajectory) rather than re-deriving it here.
+// costume. This is the second visual-correction pass on the cooking
+// animation — see the pixel-art generator this file's grid data was
+// derived from for the full design rationale rather than re-deriving it
+// here. The first pass fixed causality (authored poses instead of a
+// generic bounce); this pass fixes *legibility at actual desktop size*,
+// which turned out to need different geometry, not just different poses:
 //
-// Two structural facts that keep everything aligned:
+// 1. The arm/hand used to be a single row thick. At Small/Medium desktop
+//    size that's invisible next to the body's own much taller edge — it
+//    read as the pan sprouting from the body. The arm is now FOUR rows
+//    thick, matching the body's own proven left/right arm-nub band
+//    (compare standingGrid rows 7-10) exactly, which is what already reads
+//    correctly as a protruding limb everywhere else in this sprite.
+// 2. The three arm/pan positions (FLICK/HOLD/DIP) are each their own
+//    4-row band with real separation between them, so "dip before the
+//    toss" and "flick above hold" are visibly different heights, not a
+//    1-2 row nuance.
+// 3. Eyes now use three distinct rows (not two), so PAN, RIGHT and
+//    UP_RIGHT are three genuinely different gaze positions — an earlier
+//    version had PAN and RIGHT sharing identical geometry, which is why
+//    the gaze didn't read as tracking anything.
+// 4. The hat crown has real transparent notches between three separate
+//    lobes, not just internal shading — silhouette, not colour, is what
+//    reads as "fluffy" at this resolution.
+//
+// Two structural facts still keep everything aligned, unchanged from the
+// first pass:
 //
 // 1. Every pose starts from the same 32x19 canvas. Non-cooking poses simply
 //    leave cols 20-31 blank; cooking poses use that space for the arm ->
@@ -14,9 +35,8 @@ import Cocoa
 //    poses, so switching poses can never cause a visible jump.
 // 2. The cooking "toss" never sets a body offset. Every authored cooking
 //    pose keeps head/body/legs pixel-identical; the only things that move
-//    are the arm-hand-pan assembly (four discrete row "bands": LOW, HOLD,
-//    RAISED, HIGH) and the food, which travels independently along its own
-//    small ballistic arc once launched.
+//    are the arm-hand-pan assembly and the food, which travels
+//    independently along its own small ballistic arc once launched.
 
 enum Pose {
     case standing
@@ -74,6 +94,9 @@ enum ClawdSprite {
     // '#' = body, '0' = eye, '.' = transparent, 'W'/'w' = hat, 'S' = pan/handle,
     // 'G' = food, 'T' = terminal screen, 'c' = cursor, 'K' = keyboard.
     // Every row is exactly 32 characters, every grid exactly 19 rows.
+
+// AUTO-GENERATED grid data (32x19) — see the pixel-art generator
+// used to derive and verify these dimensions before writing any Swift.
 
     private static let standingGrid = [
         "................................",
@@ -252,9 +275,9 @@ enum ClawdSprite {
     ]
 
     private static let hatPlacingGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "######00########00######........",
@@ -274,9 +297,9 @@ enum ClawdSprite {
     ]
 
     private static let hatOnGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "....##00########00##............",
@@ -296,17 +319,17 @@ enum ClawdSprite {
     ]
 
     private static let cookHoldPanGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "....################............",
+        "....################............",
         "....####00########00............",
+        "....##################SSSSSSS...",
+        "....##################....SGS...",
         "....################............",
-        "....################............",
-        "....##################SSSSSGS...",
-        "....################......SSS...",
         "....################............",
         "....################............",
         "....################............",
@@ -318,20 +341,20 @@ enum ClawdSprite {
     ]
 
     private static let cookAnticipateGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
+        "....################............",
         "....################............",
         "....################............",
         "....####00########00............",
         "....################............",
         "....################............",
         "....################............",
-        "....##################SSSSSGS...",
-        "....################......SSS...",
         "....################............",
-        "....################............",
+        "....##################SSSSSSS...",
+        "....##################....SGS...",
         "....################............",
         "....##..##....##..##............",
         "....##..##....##..##............",
@@ -340,16 +363,16 @@ enum ClawdSprite {
     ]
 
     private static let cookFlick1Grid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "....################............",
-        "....####00########00............",
         "....################............",
-        "....##################SSSSSGS...",
-        "....################......SSS...",
+        "....####00########00............",
+        "....##################SSSSSSS...",
+        "....##################....SGS...",
         "....################............",
         "....################............",
         "....################............",
@@ -362,15 +385,15 @@ enum ClawdSprite {
     ]
 
     private static let cookFlick2Grid = [
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWWW.WW..............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
-        "....################............",
-        "....################............",
-        "....################............",
+        "....##################SSSSSGS...",
+        "....##################....SSS...",
         "....####00########00............",
-        "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....################............",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -384,17 +407,17 @@ enum ClawdSprite {
     ]
 
     private static let cookFoodLeavingGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
-        "....################.......GG...",
         "....################............",
-        "....####00########00............",
         "....################............",
+        "....####00########00.......GG...",
         "....################............",
         "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....##################....SSS...",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -406,17 +429,17 @@ enum ClawdSprite {
     ]
 
     private static let cookFoodLowAscendGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...........GG..",
-        "....wwwwwwwwwwwwwwww.......G....",
-        "....################............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
+        "....wwwwwwwwwwwwwwww........GG..",
+        "....################.......G....",
         "....################............",
         "....####00########00............",
         "....################............",
-        "....################............",
         "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....##################....SSS...",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -428,17 +451,17 @@ enum ClawdSprite {
     ]
 
     private static let cookFoodHighAscendGrid = [
-        ".............................G..",
-        ".......WWW.WWWW.............GG..",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW............G..",
+        ".......WWWwWWWwWWW..........GG..",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "....####00########00............",
         "....################............",
         "....################............",
-        "....################............",
         "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....##################....SSS...",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -450,17 +473,17 @@ enum ClawdSprite {
     ]
 
     private static let cookFoodApexGrid = [
-        ".............................GG.",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW............GG.",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "....####00########00............",
         "....################............",
         "....################............",
-        "....################............",
         "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....##################....SSS...",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -472,17 +495,17 @@ enum ClawdSprite {
     ]
 
     private static let cookFoodHighDescendGrid = [
-        ".............................G..",
-        ".......WWW.WWWW.............GG..",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW............G..",
+        ".......WWWwWWWwWWW..........GG..",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "....####00########00............",
         "....################............",
         "....################............",
-        "....################............",
         "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....##################....SSS...",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -494,17 +517,17 @@ enum ClawdSprite {
     ]
 
     private static let cookFoodLowDescendGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...........G...",
-        "....wwwwwwwwwwwwwwww.......GG...",
-        "....################............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
+        "....wwwwwwwwwwwwwwww........G...",
+        "....################.......GG...",
         "....################............",
         "....####00########00............",
         "....################............",
-        "....################............",
         "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....##################....SSS...",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -516,17 +539,17 @@ enum ClawdSprite {
     ]
 
     private static let cookCatchGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
+        "....################............",
+        "....################............",
         "....################.......GG...",
-        "....################............",
         "....####00########00............",
-        "....################............",
-        "....################............",
         "....##################SSSSSSS...",
-        "....################......SSS...",
+        "....##################....SSS...",
+        "....################............",
         "....################............",
         "....################............",
         "....################............",
@@ -538,20 +561,20 @@ enum ClawdSprite {
     ]
 
     private static let cookCatchDipGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
+        "....################............",
         "....################............",
         "....################............",
         "....####00########00............",
         "....################............",
         "....################............",
         "....################............",
-        "....##################SSSSSGS...",
-        "....################......SSS...",
         "....################............",
-        "....################............",
+        "....##################SSSSSSS...",
+        "....##################....SGS...",
         "....################............",
         "....##..##....##..##............",
         "....##..##....##..##............",
@@ -560,17 +583,17 @@ enum ClawdSprite {
     ]
 
     private static let cookIdleEyesGrid = [
-        "................................",
-        ".......WWW.WWWW.................",
-        ".....wWWWWWWWwWWW...............",
+        "........WW.WWW.WW...............",
+        ".......WWWwWWWwWWW..............",
+        ".....wWWWWWWWWWWWWw.............",
         "....wwwwwwwwwwwwwwww............",
         "....################............",
         "....################............",
         "....##00########00##............",
         "....################............",
+        "....##################SSSSSSS...",
+        "....##################....SGS...",
         "....################............",
-        "....##################SSSSSGS...",
-        "....################......SSS...",
         "....################............",
         "....################............",
         "....################............",

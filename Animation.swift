@@ -77,14 +77,16 @@ enum Sequences {
 
     /// One full toss: hold → anticipate → flick → launch → rise (tumbling,
     /// slowing) → apex (held) → fall (tumbling, accelerating) → catch → dip
-    /// → recover → a beat of inspection before the eyes let go of the pan.
-    /// Hold counts are deliberately uneven — fast near the pan, slow near
-    /// the apex — instead of even spacing, so the motion doesn't read as a
-    /// constant-speed loop.
-    private static let toss: [Frame] =
+    /// → recover → inspect. Hold counts are deliberately uneven — fast near
+    /// the pan, slow near the apex — instead of even spacing, so the motion
+    /// doesn't read as a constant-speed loop. Eyes stay on the pan (PAN)
+    /// through the whole of RECOVER and INSPECT; RELAX (eyes forward) is
+    /// deliberately a separate step, appended by tossA/B/C below, not part
+    /// of this core — a toss always ends still watching the pan.
+    private static let tossCore: [Frame] =
         hold(.cookHoldPan, 8) +          // COOK_READY / COOK_LOOK_PAN
         hold(.cookAnticipate, 4) +       // anticipation: wrist dips
-        hold(.cookFlick1, 2) +           // wrist rising
+        hold(.cookFlick1, 2) +           // wrist rising, through the hold level
         hold(.cookFlick2, 2) +           // strongest flick — hat reacts, food launches
         hold(.cookFoodLeaving, 2) +      // food just separated, adjacent to the pan
         hold(.cookFoodLowAscend, 2) +    // fast
@@ -94,16 +96,25 @@ enum Sequences {
         hold(.cookFoodLowDescend, 2) +   // faster
         hold(.cookCatch, 2) +            // food adjacent to the rim
         hold(.cookCatchDip, 3) +         // pan + arm dip on impact
-        hold(.cookHoldPan, 4)            // recover, then inspect — eyes stay on the pan
+        hold(.cookHoldPan, 3) +          // RECOVER — pan snaps back up from the dip
+        hold(.cookHoldPan, 3)            // INSPECT — a distinct pause, still watching the pan
 
-    /// Occasionally, between tosses, the eyes actually relax forward for a
-    /// moment — "the rare idle moment" — before the next toss begins.
-    private static let tossThenRelax: [Frame] = toss + hold(.cookIdleEyes, 3)
+    /// RELAX: eyes finally let go of the pan and look forward — always at
+    /// least ~180ms of it — then an extra, irregular pause before the next
+    /// toss. Three fixed durations (not random) is enough to keep the loop
+    /// from reading as a metronome without complicating the animator with
+    /// real randomness: cooking should feel like the mascot deciding when
+    /// to toss again, not a timer.
+    private static let tossA: [Frame] = tossCore + hold(.cookIdleEyes, 12) // ~0.7s pause
+    private static let tossB: [Frame] = tossCore + hold(.cookIdleEyes, 20) // ~1.2s pause
+    private static let tossC: [Frame] = tossCore + hold(.cookIdleEyes, 7)  // ~0.4s pause
 
     /// The continuous cooking loop. Assumes the hat and pan are already on —
     /// this is what plays for as long as the pan is out, whether that's one
-    /// second or ten minutes, with no fixed length of its own to notice.
-    static let cookLoop: [Frame] = toss + toss + tossThenRelax
+    /// second or ten minutes. Cycling three differently-paced tosses instead
+    /// of repeating one is what keeps it from reading as "demonstrating its
+    /// toss animation" on a loop.
+    static let cookLoop: [Frame] = tossA + tossB + tossC
 
     // MARK: Other tool-shaped activities
     //
