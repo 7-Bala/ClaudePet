@@ -13,8 +13,9 @@ struct Frame {
     var poof: PoofKind? = nil
 }
 
-/// Animation table including canonical Claude Code moves, Chef Cooking sequences,
-/// and the Checkered Victory Flag animation from Codrops GIF.
+/// Claude Code's own animation table, reproduced frame for frame, a chef
+/// cooking sequence traced from Anthropic's "Desktop creatures" reel, and a
+/// set of idle fidgets so Clawd has something to do when nothing is happening.
 enum Sequences {
 
     static let frameInterval: TimeInterval = 0.060
@@ -23,12 +24,13 @@ enum Sequences {
         (0..<count).map { _ in Frame(pose: pose, offset: offset) }
     }
 
+    /// The two-frame puff that starts a hop.
     private static func puff() -> [Frame] {
         [Frame(pose: .standing, offset: 2, poof: .dot),
          Frame(pose: .standing, offset: 2, poof: .wave)]
     }
 
-    // MARK: Canonical — match Claude Code frame for frame
+    // MARK: Canonical — these match Claude Code frame for frame
 
     static let look: [Frame] =
         hold(.lookRight, 5) + hold(.lookLeft, 5) + hold(.standing, 1)
@@ -37,41 +39,15 @@ enum Sequences {
         puff() + hold(.armsUp, 3) + hold(.standing, 1) +
         puff() + hold(.armsUp, 3) + hold(.standing, 1)
 
-    // MARK: Checkered Victory Flag (Task Finished — Codrops GIF Animation) 🏁
-    //
-    // From the reference GIF the mascot:
-    //  1. Gently bounces (offset 0 → -1 → 0) while alternating flag wave A / B
-    //  2. Bounces ~4 times total, smooth and steady
-    //  3. Ends by returning to standing
-    //
-    // No extreme offsets (-3, etc.) — the GIF shows only a gentle 1-cell bounce.
-
-    static let flagVictory: [Frame] =
-        // Entrance: small poof then start waving
-        hold(.standing, 2) +
-        // Wave cycle 1: gentle bounce up
-        hold(.flagHoldA, 5) +
-        hold(.flagHoldB, 5, offset: -1) +
-        // Wave cycle 2: bounce back
-        hold(.flagHoldA, 5) +
-        hold(.flagHoldB, 5, offset: -1) +
-        // Wave cycle 3
-        hold(.flagHoldA, 5) +
-        hold(.flagHoldB, 5, offset: -1) +
-        // Wave cycle 4: final wave
-        hold(.flagHoldA, 5) +
-        hold(.flagHoldB, 5, offset: -1) +
-        // Settle back
-        hold(.flagHoldA, 4) +
-        hold(.standing, 3)
-
-    /// Played when a task completes
-    static let celebrate: [Frame] = flagVictory
+    static let celebrate: [Frame] =
+        jump + hold(.standing, 3, offset: 2)
 
     static let spin: [Frame] =
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.lookLeft, 2) +
         hold(.armsUp, 3) + hold(.standing, 1)
 
+    /// Three hops in a row. Sideways travel is driven by the view, not by
+    /// per-frame offsets, so the sprite never draws outside its window.
     static let skip: [Frame] =
         hold(.standing, 1, offset: 2) + hold(.armsUp, 2) + hold(.standing, 1) +
         hold(.standing, 1, offset: 2) + hold(.armsUp, 2) + hold(.standing, 1) +
@@ -80,36 +56,55 @@ enum Sequences {
 
     static let skipDuration: TimeInterval = TimeInterval(skip.count) * frameInterval
 
-    // MARK: Chef & Cooking Animations 👨‍🍳🔥
-
-    static let chefCooking: [Frame] =
-        hold(.chefStanding, 4) +
-        hold(.chefCookingA, 4, offset: -1) +
-        hold(.chefCookingB, 4) +
-        hold(.chefStanding, 3) +
-        hold(.chefCookingA, 4, offset: -1) +
-        hold(.chefCookingB, 4) +
-        hold(.chefJoy, 5) +
-        hold(.chefStanding, 3)
-
-    static let chefQuickFlip: [Frame] =
-        hold(.chefStanding, 2) +
-        hold(.chefCookingA, 3, offset: -1) +
-        hold(.chefCookingB, 3) +
-        hold(.chefStanding, 2)
-
-    static func clickReaction() -> [Frame] {
-        let options = [jump, look, flagVictory, chefCooking]
-        return options.randomElement()!
-    }
-
     // MARK: From the crab-walk GIF
 
+    /// Legs alternate while the body bobs. Four steps per loop.
     static let walk: [Frame] =
         hold(.walkA, 3, offset: 1) + hold(.standing, 2) +
         hold(.walkB, 3, offset: 1) + hold(.standing, 2)
 
-    // MARK: Idle fidgets — personality
+    // MARK: Chef cooking — traced from the "Desktop creatures" reel
+    //
+    // The reel's sequence, frame by frame: plain -> hat poofs in over a
+    // couple of frames -> settles with a tiny hop -> pan appears already
+    // mid-flip -> the food arcs up and lands back in the pan, repeated a
+    // few times -> pan is put away -> hat comes off -> back to plain.
+    // Every stage here plays that out at the same beat.
+
+    private static let hatOn: [Frame] =
+        hold(.hatForming, 3) +
+        hold(.hatOn, 4) +
+        hold(.hatOn, 3, offset: 1)   // the little settling hop
+
+    private static let hatOff: [Frame] =
+        hold(.hatOn, 3, offset: 1) + hold(.hatForming, 3) + hold(.standing, 2)
+
+    /// One toss of the food: up, hang, and back down into the pan.
+    private static let flip: [Frame] =
+        hold(.chefIdle, 2) +
+        hold(.chefFlipUp, 3, offset: -1) +
+        hold(.chefFlipUp, 2) +
+        hold(.chefCatch, 3) +
+        hold(.chefIdle, 3)
+
+    /// The full costume change: hat on, cook for a few tosses, hat off.
+    static let cookMeal: [Frame] =
+        hatOn +
+        flip + flip + flip +
+        hold(.chefIdle, 4) +
+        hatOff
+
+    /// A shorter version for reactions that shouldn't hijack the animation
+    /// for a full two seconds — one toss only, hat stays on throughout.
+    static let cookFlip: [Frame] =
+        hold(.hatOn, 2) + flip + hold(.hatOn, 2)
+
+    /// Clicking Clawd in Claude Code plays one of these at random.
+    static func clickReaction() -> [Frame] {
+        Bool.random() ? jump : look
+    }
+
+    // MARK: Idle fidgets — the personality
 
     static let blink: [Frame] =
         hold(.asleep, 2) + hold(.standing, 4)
@@ -117,32 +112,40 @@ enum Sequences {
     static let doubleBlink: [Frame] =
         hold(.asleep, 2) + hold(.standing, 3) + hold(.asleep, 2) + hold(.standing, 4)
 
+    /// Slow sweep of the room.
     static let lookAround: [Frame] =
         hold(.lookLeft, 7) + hold(.standing, 4) + hold(.lookRight, 7) + hold(.standing, 4)
 
+    /// Rises up on tiptoe with both arms out, holds, then settles.
     static let stretch: [Frame] =
         hold(.armsUp, 3) + hold(.armsUp, 6, offset: -2) + hold(.armsUp, 4, offset: -1) +
         hold(.standing, 3) + hold(.standing, 3, offset: 1) + hold(.standing, 3)
 
+    /// Shivers side to side.
     static let wiggle: [Frame] =
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.lookLeft, 2) +
         hold(.lookRight, 2) + hold(.standing, 3)
 
+    /// Marches on the spot.
     static let shuffle: [Frame] =
         hold(.walkA, 3) + hold(.walkB, 3) + hold(.walkA, 3) + hold(.walkB, 3) + hold(.standing, 2)
 
+    /// Sits down for a moment, then gets back up.
     static let sit: [Frame] =
         hold(.standing, 2, offset: 1) + hold(.squat, 20) +
         hold(.squat, 6) + hold(.standing, 2, offset: 1) + hold(.standing, 3)
 
+    /// A small nod.
     static let nod: [Frame] =
         hold(.standing, 3, offset: 1) + hold(.standing, 3) +
         hold(.standing, 3, offset: 1) + hold(.standing, 3)
 
+    /// Picked at random whenever Clawd has been standing still for a while.
     static func idleFidget() -> [Frame] {
-        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod, flagVictory, chefCooking].randomElement()!
+        [blink, doubleBlink, lookAround, stretch, wiggle, shuffle, sit, nod, cookFlip].randomElement()!
     }
 
+    /// Twitches in its sleep.
     static func sleepFidget() -> [Frame] {
         [hold(.walkA, 3) + hold(.asleep, 3),
          hold(.asleep, 5, offset: -1) + hold(.asleep, 5),
@@ -151,17 +154,21 @@ enum Sequences {
 
     // MARK: Loops
 
+    /// Barely-there breathing for when nothing is running. ~2s per cycle.
     static let sleeping: [Frame] =
         hold(.asleep, 16) + hold(.asleep, 16, offset: 1)
 
+    /// Awake and waiting, but not working.
     static let idle: [Frame] =
         hold(.standing, 14) + hold(.standing, 10, offset: 1)
 
+    /// Busier loop, played while a turn is in flight — cooking, since that's
+    /// what "Claude is working" looks like on the reel.
     static let working: [Frame] =
-        hold(.chefStanding, 5) + hold(.chefCookingA, 4, offset: -1) +
-        hold(.chefCookingB, 4) + hold(.chefStanding, 3) +
-        hold(.lookRight, 3) + hold(.lookLeft, 3) + hold(.chefStanding, 3)
+        hatOn + flip + flip + hold(.chefIdle, 6) + flip
 
+    /// Deliberately unlike anything in the working set: Clawd waves both arms,
+    /// bounces, then tilts its head at you. Loops until you answer.
     static let asking: [Frame] =
         hold(.armsUp, 3) + hold(.standing, 2) +
         hold(.armsUp, 3) + hold(.standing, 2) +
@@ -172,7 +179,7 @@ enum Sequences {
     // MARK: Reactions
 
     static let excited: [Frame] =
-        hold(.chefStanding, 2) + hold(.chefJoy, 3) + hold(.chefStanding, 2) +
+        hold(.armsUp, 2) + hold(.standing, 1) + hold(.armsUp, 2) + hold(.standing, 1) +
         hold(.lookLeft, 2) + hold(.lookRight, 2) + hold(.standing, 2)
 
     static let flinch: [Frame] =
@@ -183,7 +190,8 @@ enum Sequences {
         hold(.standing, 2, offset: 2) + hold(.standing, 2)
 }
 
-/// Plays sequences on a fixed 60ms clock.
+/// Plays sequences on a fixed 60ms clock. A one-shot sequence runs to completion
+/// and then falls back to whatever loop is currently set.
 final class Animator {
 
     private(set) var current: Frame = Frame()
@@ -195,12 +203,14 @@ final class Animator {
     private var isOneShot = false
     private var lastOneShotStarted = Date.distantPast
 
+    /// True while a one-shot reaction is still playing.
     var isBusy: Bool { isOneShot }
 
     init() {
         current = sequence.first ?? Frame()
     }
 
+    /// Sets the background loop. Takes effect once any one-shot finishes.
     func setLoop(_ frames: [Frame]) {
         guard !frames.isEmpty else { return }
         let changed = !framesMatch(loopSequence, frames)
@@ -213,6 +223,9 @@ final class Animator {
         }
     }
 
+    /// Interrupts with a one-shot reaction, then returns to the loop.
+    ///
+    /// Rate-limited: a burst of twenty `Read` calls would otherwise strobe.
     @discardableResult
     func play(_ frames: [Frame], minimumGap: TimeInterval = 0.4) -> Bool {
         guard !frames.isEmpty else { return false }

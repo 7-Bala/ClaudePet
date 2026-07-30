@@ -1,27 +1,38 @@
 import Cocoa
 
-// Clawd's artwork on a 24 x 18 grid of square cells.
+// Clawd's artwork on a 24 x 18 grid of square cells, plus a chef hat + pan
+// costume traced frame-by-frame from a real recording of Anthropic's "Desktop
+// creatures, built with Claude Code" reel.
 //
-// Exactly reproduces Anthropic's "Welcome, Claw'd" pixel grid and includes the
-// Checkered Victory Flag animation from the Codrops GIF: a tall black pole rising
-// from the right shoulder with a 4x3 checkered flag waving at the top, while
-// the mascot bounces.
+// Two bugs in the previous costume implementation are why it looked wrong:
+//
+// 1. The chef poses didn't start with the same 2 blank pad rows every other
+//    pose uses, so the head sat 2 rows lower than normal — Clawd visibly
+//    jumped down and up when the costume went on/off.
+// 2. The chef poses' body rows were missing the 4-column left indent every
+//    other pose has, so the whole body was shifted left, which is what let
+//    the pan drift into the face instead of sitting cleanly off to the side.
+//
+// The fix here is structural, not cosmetic: every costumed pose starts as an
+// exact copy of `standingGrid` and only overwrites two regions — rows 0-1
+// (blank in every other pose) for the hat, and the 4x4 right-arm block
+// (cols 20-23, rows 6-9) for the pan — so nothing can ever drift out of
+// alignment with the rest of the poses again.
 
 enum Pose {
     case standing
     case lookLeft
     case lookRight
     case armsUp
-    case asleep         // eyes closed
-    case walkA          // legs 1 & 3 planted
-    case walkB          // legs 2 & 4 planted
-    case squat          // legs folded under, for idle sit
-    case chefStanding   // wearing white chef hat, left arm, pan & spatula with green food
-    case chefCookingA   // flipping green food high into the air
-    case chefCookingB   // catching green food back in pan
-    case chefJoy        // celebrating dish with arms up
-    case flagHoldA      // holding checkered flag on tall pole (flag waves left)
-    case flagHoldB      // holding checkered flag on tall pole (flag waves right)
+    case asleep       // eyes closed
+    case walkA        // legs 1 & 3 planted
+    case walkB        // legs 2 & 4 planted
+    case squat        // legs folded under, for the idle sit
+    case hatForming    // chef hat mid-poof, just starting to appear
+    case hatOn         // chef hat fully on, hands empty
+    case chefIdle      // hat + pan, food resting in the pan
+    case chefFlipUp    // hat + pan, food tossed up in the air
+    case chefCatch     // hat + pan, food falling back toward the pan
 }
 
 enum ClawdSprite {
@@ -29,30 +40,25 @@ enum ClawdSprite {
     static let cols = 24
     static let rows = 18
 
-    /// Color palette sampled straight out of the official reference artwork
-    static let bodyColor     = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 1.0)
-    static let eyeColor      = NSColor.black
-    static let poofColor     = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 0.45)
+    /// rgb(217,119,87) — sampled straight out of the reference GIF's colour table.
+    static let bodyColor = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 1.0)
+    static let eyeColor  = NSColor.black
+    static let poofColor = NSColor(srgbRed: 217.0 / 255.0, green: 119.0 / 255.0, blue: 87.0 / 255.0, alpha: 0.45)
+
+    /// Chef hat: bright poof on top, a slightly shaded band for the brim.
     static let hatColor      = NSColor(srgbRed: 0.98, green: 0.98, blue: 0.98, alpha: 1.0)
-    static let hatShadeColor = NSColor(srgbRed: 0.88, green: 0.88, blue: 0.90, alpha: 1.0)
-    static let metalColor    = NSColor(srgbRed: 0.30, green: 0.30, blue: 0.33, alpha: 1.0)
-    static let foodColor     = NSColor(srgbRed: 76.0 / 255.0,  green: 175.0 / 255.0, blue: 80.0 / 255.0, alpha: 1.0)
-    static let steamColor    = NSColor(srgbRed: 156.0 / 255.0, green: 204.0 / 255.0, blue: 101.0 / 255.0, alpha: 0.8)
-    static let poleColor     = NSColor(srgbRed: 0.15, green: 0.15, blue: 0.15, alpha: 1.0)
+    static let hatShadeColor = NSColor(srgbRed: 0.87, green: 0.87, blue: 0.89, alpha: 1.0)
+    /// Pan + handle.
+    static let panColor  = NSColor(srgbRed: 0.30, green: 0.30, blue: 0.33, alpha: 1.0)
+    /// The food being cooked.
+    static let foodColor = NSColor(srgbRed: 76.0 / 255.0, green: 175.0 / 255.0, blue: 80.0 / 255.0, alpha: 1.0)
 
-    private static let padRow = "........................"
-
-    // Character key:
-    // '#' = body, '0' = eye, 'W' = white (hat/flag white), 'w' = hat shade,
-    // 'S' = pan/handle grey, 'G' = green food, 'm' = steam,
-    // 'p' = flag pole (dark), 'k' = flag black square
-
-    // ──────────────────────────────────────────────────────────────────────
-    // MARK: Standard Poses
-    // ──────────────────────────────────────────────────────────────────────
+    // '#' = body, '0' = eye, '.' = transparent, 'W'/'w' = hat, 'S' = pan, 'G' = food.
+    // Every row is exactly 24 characters, every grid exactly 18 rows.
 
     private static let standingGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -72,7 +78,8 @@ enum ClawdSprite {
     ]
 
     private static let lookLeftGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "....00########00####....",
@@ -92,7 +99,8 @@ enum ClawdSprite {
     ]
 
     private static let lookRightGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "....####00########00....",
@@ -112,7 +120,8 @@ enum ClawdSprite {
     ]
 
     private static let armsUpGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "######00########00######",
@@ -132,7 +141,8 @@ enum ClawdSprite {
     ]
 
     private static let asleepGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "....################....",
@@ -152,7 +162,8 @@ enum ClawdSprite {
     ]
 
     private static let walkAGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -172,7 +183,8 @@ enum ClawdSprite {
     ]
 
     private static let walkBGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -192,7 +204,8 @@ enum ClawdSprite {
     ]
 
     private static let squatGrid = [
-        padRow, padRow,
+        "........................",
+        "........................",
         "....################....",
         "....################....",
         "....##00########00##....",
@@ -211,166 +224,152 @@ enum ClawdSprite {
         "........................",
     ]
 
-    // ──────────────────────────────────────────────────────────────────────
-    // MARK: Chef Poses
-    // ──────────────────────────────────────────────────────────────────────
-
-    private static let chefStandingGrid = [
-        "........WWWWWW..........",
-        "......WWWWWWWWWW........",
-        ".....WWWWWWWWWWWW.......",
-        ".....WWWWWWWWWWWW.......",
-        "....################....",
-        "....################....",
-        "....##00########00##....",
-        "....##00########00##....",
-        "################...mGG..",
-        "################..mGGG..",
-        "################SSSSSS..",
-        "....############.SSSS...",
-        "....################....",
-        "....################....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-    ]
-
-    private static let chefCookingAGrid = [
-        "........WWWWWW.....GGG..",
-        "......WWWWWWWWWW..mGGG..",
-        ".....WWWWWWWWWWWW.......",
-        ".....WWWWWWWWWWWW.......",
-        "....################....",
-        "....################....",
-        "....##00########00##....",
-        "....##00########00##....",
-        "################........",
-        "################.SSSSSS.",
-        "################.SSSSSS.",
-        "....############.SSSS...",
-        "....################....",
-        "....################....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-    ]
-
-    private static let chefCookingBGrid = [
-        "........WWWWWW..........",
-        "......WWWWWWWWWW........",
-        ".....WWWWWWWWWWWW.......",
-        ".....WWWWWWWWWWWW.......",
-        "....################....",
-        "....################....",
-        "....##00########00##....",
-        "....##00########00##....",
-        "################...GGG..",
-        "################..mGGG..",
-        "################SSSSSS..",
-        "....############.SSSS...",
-        "....################....",
-        "....################....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-    ]
-
-    private static let chefJoyGrid = [
-        "........WWWWWW..........",
-        "......WWWWWWWWWW........",
-        ".....WWWWWWWWWWWW.......",
-        ".....WWWWWWWWWWWW.......",
-        "....################....",
-        "######00########00######",
-        "######00########00######",
-        "################...GGG..",
-        "################..mGGG..",
-        "................SSSSSS..",
-        "....################....",
-        "....################....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-        "....##..##....##..##....",
-    ]
-
-    // ──────────────────────────────────────────────────────────────────────
-    // MARK: Checkered Victory Flag Poses (from Codrops GIF)
+    // ── Chef costume ─────────────────────────────────────────────────────
     //
-    // Matching the reference exactly:
-    // - Tall black pole ('p') rises from right shoulder (col 19), 4 cells above head
-    // - 4x3 checkered flag ('k' black, 'W' white) attached to top of pole
-    // - Flag waves by shifting 1 col left/right between A and B
-    // - Body is standard standing shape (no arms out)
-    // ──────────────────────────────────────────────────────────────────────
+    // Rows 3-9 and 14-17 are byte-for-byte identical to `standingGrid` in
+    // every one of these poses — head, eyes, legs and both arm nubs never
+    // move a single pixel when the costume goes on, comes off, or the pan
+    // starts flipping food. Only three regions ever change: rows 0-2 (the
+    // hat), and rows 9-12's last 4 columns (the pan and the food).
+    //
+    // The pan sits low, hanging off the lower body with a one-row gap below
+    // the normal right arm nub — traced from the reel, where the pan reads
+    // as a separate item the arm is holding rather than an extension of it.
 
-    private static let flagHoldAGrid = [
-        "..............kWkWkWp...",  // row 0: 6-wide checkered flag left of pole (wave-A)
-        "..............WkWkWkp...",  // row 1: checkered row 2
-        "..............kWkWkWp...",  // row 2: checkered row 3
-        "..............WkWkWkp...",  // row 3: checkered row 4
-        "....................p...",  // row 4: pole above head
-        "....................p...",  // row 5: pole above head
-        "....################p...",  // row 6: head + pole continuing
-        "....################p...",  // row 7: head + pole
-        "....##00########00##p...",  // row 8: eyes + pole
-        "....##00########00##p...",  // row 9: eyes + pole
-        "....################....",  // row 10: body
-        "....################....",  // row 11: body
-        "....################....",  // row 12: lower body
-        "....################....",  // row 13: lower body
-        "....##..##....##..##....",  // row 14: legs
-        "....##..##....##..##....",  // row 15: legs
-        "....##..##....##..##....",  // row 16: legs
-        "....##..##....##..##....",  // row 17: legs
+    // A small grey blob just starting to form above the head.
+    private static let hatFormingGrid = [
+        "........................",
+        ".........ww.............",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "########################",
+        "########################",
+        "########################",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
     ]
 
-    private static let flagHoldBGrid = [
-        "...............kWkWkWp..",  // row 0: 6-wide checkered flag shifted right (wave-B)
-        "...............WkWkWkp..",  // row 1: checkered row 2
-        "...............kWkWkWp..",  // row 2: checkered row 3
-        "...............WkWkWkp..",  // row 3: checkered row 4
-        "....................p...",  // row 4: pole above head
-        "....................p...",  // row 5: pole above head
-        "....################p...",  // row 6: head + pole continuing
-        "....################p...",  // row 7: head + pole
-        "....##00########00##p...",  // row 8: eyes + pole
-        "....##00########00##p...",  // row 9: eyes + pole
-        "....################....",  // row 10: body
-        "....################....",  // row 11: body
-        "....################....",  // row 12: lower body
-        "....################....",  // row 13: lower body
-        "....##..##....##..##....",  // row 14: legs
-        "....##..##....##..##....",  // row 15: legs
-        "....##..##....##..##....",  // row 16: legs
-        "....##..##....##..##....",  // row 17: legs
+    // Hat fully poofed: a rounded top, a wide mid band, and a flat brim lip
+    // that sits right at the hairline — replacing just the top pixel row of
+    // the head, so the head's height and eye position never move.
+    private static let hatOnGrid = [
+        "........WWWWWW..........",
+        "......WWWWWWWWWWWW......",
+        "....wwwwwwwwwwwwwwww....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "########################",
+        "########################",
+        "########################",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
+    // Hat on, pan hanging below the right arm, food resting in it. Food and
+    // pan share column 22 all the way down so the toss below reads as one
+    // straight vertical bounce with no horizontal drift.
+    private static let chefIdleGrid = [
+        "........WWWWWW..........",
+        "......WWWWWWWWWWWW......",
+        "....wwwwwwwwwwwwwwww....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "########################",
+        "########################",
+        "########################",
+        "....################....",
+        "....################..G.",
+        "....################.SSS",
+        "....################.SSS",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
+    // Food tossed up off the pan — high enough to pass in front of the arm
+    // nub, which is why this is the one frame that borrows a pixel from row 9.
+    private static let chefFlipUpGrid = [
+        "........WWWWWW..........",
+        "......WWWWWWWWWWWW......",
+        "....wwwwwwwwwwwwwwww....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "########################",
+        "########################",
+        "######################G#",
+        "....################....",
+        "....################....",
+        "....################.SSS",
+        "....################.SSS",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
+    // Food on its way back down, passing the empty pan.
+    private static let chefCatchGrid = [
+        "........WWWWWW..........",
+        "......WWWWWWWWWWWW......",
+        "....wwwwwwwwwwwwwwww....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "########################",
+        "########################",
+        "########################",
+        "....################..G.",
+        "....################....",
+        "....################.SSS",
+        "....################.SSS",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
     ]
 
     static func grid(for pose: Pose) -> [String] {
         switch pose {
-        case .standing:      return standingGrid
-        case .lookLeft:      return lookLeftGrid
-        case .lookRight:     return lookRightGrid
-        case .armsUp:        return armsUpGrid
-        case .asleep:        return asleepGrid
-        case .walkA:         return walkAGrid
-        case .walkB:         return walkBGrid
-        case .squat:         return squatGrid
-        case .chefStanding:  return chefStandingGrid
-        case .chefCookingA:  return chefCookingAGrid
-        case .chefCookingB:  return chefCookingBGrid
-        case .chefJoy:       return chefJoyGrid
-        case .flagHoldA:     return flagHoldAGrid
-        case .flagHoldB:     return flagHoldBGrid
+        case .standing:    return standingGrid
+        case .lookLeft:    return lookLeftGrid
+        case .lookRight:   return lookRightGrid
+        case .armsUp:      return armsUpGrid
+        case .asleep:      return asleepGrid
+        case .walkA:       return walkAGrid
+        case .walkB:       return walkBGrid
+        case .squat:       return squatGrid
+        case .hatForming:  return hatFormingGrid
+        case .hatOn:       return hatOnGrid
+        case .chefIdle:    return chefIdleGrid
+        case .chefFlipUp:  return chefFlipUpGrid
+        case .chefCatch:   return chefCatchGrid
         }
     }
 
-    /// Draws Clawd with crisp pixel edges.
+    /// Draws Clawd with hard pixel edges. `cell` is one art pixel in points.
     static func draw(in ctx: CGContext,
                      pose: Pose,
                      originX: CGFloat,
@@ -378,17 +377,16 @@ enum ClawdSprite {
                      cell: CGFloat) {
         let g = grid(for: pose)
 
-        var bodyRects: [CGRect]      = []
-        var eyeRects: [CGRect]       = []
-        var hatRects: [CGRect]       = []
-        var hatShadeRects: [CGRect]  = []
-        var metalRects: [CGRect]     = []
-        var foodRects: [CGRect]      = []
-        var steamRects: [CGRect]     = []
-        var poleRects: [CGRect]      = []
-        var blackFlagRects: [CGRect] = []
+        var bodyRects: [CGRect] = []
+        var eyeRects: [CGRect] = []
+        var hatRects: [CGRect] = []
+        var hatShadeRects: [CGRect] = []
+        var panRects: [CGRect] = []
+        var foodRects: [CGRect] = []
+        bodyRects.reserveCapacity(cols * rows)
 
         for (r, row) in g.enumerated() {
+            // Row 0 is the top of the sprite; view coordinates grow upward.
             let y = originY + CGFloat(rows - 1 - r) * cell
             for (c, ch) in row.enumerated() {
                 guard ch != "." else { continue }
@@ -397,11 +395,8 @@ enum ClawdSprite {
                 case "0": eyeRects.append(rect)
                 case "W": hatRects.append(rect)
                 case "w": hatShadeRects.append(rect)
-                case "S": metalRects.append(rect)
+                case "S": panRects.append(rect)
                 case "G": foodRects.append(rect)
-                case "m": steamRects.append(rect)
-                case "p": poleRects.append(rect)
-                case "k": blackFlagRects.append(rect)
                 default:  bodyRects.append(rect)
                 }
             }
@@ -409,48 +404,29 @@ enum ClawdSprite {
 
         ctx.setFillColor(bodyColor.cgColor)
         ctx.fill(bodyRects)
-
         if !eyeRects.isEmpty {
             ctx.setFillColor(eyeColor.cgColor)
             ctx.fill(eyeRects)
         }
-
         if !hatRects.isEmpty {
             ctx.setFillColor(hatColor.cgColor)
             ctx.fill(hatRects)
         }
-
         if !hatShadeRects.isEmpty {
             ctx.setFillColor(hatShadeColor.cgColor)
             ctx.fill(hatShadeRects)
         }
-
-        if !metalRects.isEmpty {
-            ctx.setFillColor(metalColor.cgColor)
-            ctx.fill(metalRects)
+        if !panRects.isEmpty {
+            ctx.setFillColor(panColor.cgColor)
+            ctx.fill(panRects)
         }
-
         if !foodRects.isEmpty {
             ctx.setFillColor(foodColor.cgColor)
             ctx.fill(foodRects)
         }
-
-        if !steamRects.isEmpty {
-            ctx.setFillColor(steamColor.cgColor)
-            ctx.fill(steamRects)
-        }
-
-        if !poleRects.isEmpty {
-            ctx.setFillColor(poleColor.cgColor)
-            ctx.fill(poleRects)
-        }
-
-        if !blackFlagRects.isEmpty {
-            ctx.setFillColor(NSColor.black.cgColor)
-            ctx.fill(blackFlagRects)
-        }
     }
 
+    /// The little puffs Claude Code draws either side of Clawd when it hops.
     static func drawPoof(in ctx: CGContext,
                          kind: PoofKind,
                          originX: CGFloat,

@@ -11,8 +11,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let sizeDefaultsKey = "ClawdCellSize"
 
+    /// Clawd only shows up while the actual Claude desktop app is running —
+    /// this is its bundle identifier, confirmed against the installed app at
+    /// /Applications/Claude.app.
+    private static let claudeBundleID = "com.anthropic.claudefordesktop"
+
     private var window: PetWindow!
     private var view: ClawdView!
+    private var visibilityPollTimer: Timer?
+    private var isShown = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -47,7 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = view
 
         placeOnDock(initial: true)
-        window.orderFrontRegardless()
+        // Start hidden; updateVisibility() below decides whether to show it.
+        window.orderOut(nil)
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -55,6 +63,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.placeOnDock(initial: false)
+        }
+
+        // The primary signal: NSWorkspace tells us the instant Claude launches
+        // or quits, so Clawd appears/disappears essentially immediately.
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == Self.claudeBundleID else { return }
+            self?.updateVisibility()
+        }
+        workspace.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == Self.claudeBundleID else { return }
+            self?.updateVisibility()
+        }
+
+        // Belt and suspenders: a slow poll in case a notification is ever missed
+        // (e.g. Claude force-quit while this process itself was suspended).
+        let poll = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.updateVisibility()
+        }
+        RunLoop.main.add(poll, forMode: .common)
+        visibilityPollTimer = poll
+
+        updateVisibility()
+    }
+
+    private func isClaudeRunning() -> Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: Self.claudeBundleID).isEmpty
+    }
+
+    private func updateVisibility() {
+        let shouldShow = isClaudeRunning()
+        guard shouldShow != isShown else { return }
+        isShown = shouldShow
+
+        if shouldShow {
+            placeOnDock(initial: false)
+            window.orderFrontRegardless()
+        } else {
+            window.orderOut(nil)
         }
     }
 
