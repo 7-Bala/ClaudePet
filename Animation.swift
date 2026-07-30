@@ -93,11 +93,29 @@ enum Sequences {
     /// second or ten minutes, with no fixed length of its own to notice.
     static let cookLoop: [Frame] = tossLeft + tossRight
 
-    /// One toss picked at random, for reactions that shouldn't hijack the
-    /// loop for long but also shouldn't always look identical.
-    static func cookFlip() -> [Frame] {
-        Bool.random() ? tossLeft : tossRight
-    }
+    // MARK: Other tool-shaped activities
+    //
+    // Only cooking gets the hat treatment — these two are lighter-weight
+    // prop swaps with no ceremony, appropriate for the quicker things Claude
+    // actually does most of the time: looking something up, or editing a
+    // file. Uneven hold counts are deliberate, so two back-to-back loops
+    // don't land on an identical beat and read as an obvious repeat.
+
+    /// Reading/researching — a small terminal, cursor blinking irregularly.
+    static let readingLoop: [Frame] =
+        hold(.terminalOn, 11) + hold(.terminalOff, 5) +
+        hold(.terminalOn, 7) + hold(.terminalOff, 4) +
+        hold(.terminalOn, 13) + hold(.terminalOff, 5)
+
+    /// Editing — a small keyboard, left hand tapping.
+    static let typingLoop: [Frame] =
+        hold(.typingA, 6) + hold(.typingB, 2) + hold(.typingA, 4) + hold(.typingB, 2) +
+        hold(.typingA, 9) + hold(.typingB, 2) + hold(.typingA, 5) + hold(.typingB, 2)
+
+    /// No specific tool active yet — present, occasionally blinking, no prop.
+    /// What plays between UserPromptSubmit and the first tool call.
+    static let workingIdle: [Frame] =
+        hold(.standing, 20) + hold(.asleep, 2) + hold(.standing, 16)
 
     // MARK: Idle fidgets — the personality
 

@@ -87,51 +87,102 @@ final class ClawdView: NSView {
     deinit { timer?.invalidate() }
 
     // MARK: Behaviour
+    //
+    // What Clawd does while a task is running is context-aware rather than
+    // one fixed costume: the tool Claude is actually using picks the prop.
+    // Only cooking (Bash) gets the full hat ceremony; editing and reading
+    // are lighter instant prop swaps, matching how little fuss the reel's
+    // own prop changes made of themselves.
+
+    /// Which tool-shaped activity is currently playing.
+    private enum Activity: Equatable {
+        case none      // no tool active yet, or an unmapped one — no prop
+        case cooking   // Bash — chef hat + pan, continuous toss
+        case typing    // Edit/Write/NotebookEdit/MultiEdit — keyboard, hand taps
+        case reading   // Read/Grep/Glob/WebFetch/WebSearch — small terminal
+    }
+
+    private var currentActivity: Activity = .none
 
     private func react(to event: String, tool: String?) {
-        // Costume transitions (below, in moodChanged) always take priority
-        // over these — they use playImmediately so a decorative reaction
-        // here can never win a same-tick race and eat the hat-on/off cue.
         switch event {
         case "SubagentStart", "SubagentStop":
             animator.play(Sequences.spin)
         case "PostToolUseFailure":
             animator.play(Sequences.flinch)
-        case "PreToolUse" where tool == "AskUserQuestion" || tool == "ExitPlanMode":
-            animator.play(Sequences.asking)
+        case "PreToolUse":
+            if tool == "AskUserQuestion" || tool == "ExitPlanMode" {
+                animator.play(Sequences.asking)
+            }
+            if !testCookingLoop, mood == .working {
+                setActivity(Self.activity(for: tool))
+            }
         default:
             break
         }
     }
 
-    /// Puts the costume on, if it isn't already, then leaves the continuous
-    /// cook loop running behind it.
-    private func enterCooking() {
-        guard !costumeOn else { return }
-        costumeOn = true
-        animator.setLoop(Sequences.cookLoop)
-        animator.playImmediately(Sequences.hatOnTransition)
+    private static func activity(for tool: String?) -> Activity {
+        switch tool {
+        case "Bash":
+            return .cooking
+        case "Edit", "Write", "NotebookEdit", "MultiEdit":
+            return .typing
+        case "Read", "Grep", "Glob", "WebFetch", "WebSearch":
+            return .reading
+        default:
+            return .none
+        }
     }
 
-    /// Takes the costume off, if it's on, then settles into whatever loop
-    /// should play once it's gone.
-    private func exitCooking(thenLoop: [Frame]) {
-        guard costumeOn else {
-            animator.setLoop(thenLoop)
-            return
+    private func loop(for activity: Activity) -> [Frame] {
+        switch activity {
+        case .none:    return Sequences.workingIdle
+        case .cooking: return Sequences.cookLoop
+        case .typing:  return Sequences.typingLoop
+        case .reading: return Sequences.readingLoop
         }
+    }
+
+    /// Switches the active tool-shaped costume. Crossing in or out of
+    /// `.cooking` plays the hat on/off gesture; any other switch is an
+    /// instant prop swap — no ceremony, matching how plainly the reel's own
+    /// props changed.
+    private func setActivity(_ activity: Activity) {
+        guard activity != currentActivity else { return }
+        let hadHat = costumeOn
+        currentActivity = activity
+        costumeOn = (activity == .cooking)
+
+        animator.setLoop(loop(for: activity))
+
+        if costumeOn && !hadHat {
+            animator.playImmediately(Sequences.hatOnTransition)
+        } else if !costumeOn && hadHat {
+            animator.playImmediately(Sequences.hatOffTransition)
+        }
+    }
+
+    /// Drops whatever activity was playing — taking the hat off first if it
+    /// was on — and settles into `thenLoop`, optionally through a one-shot
+    /// flourish (the little celebration when a task finishes).
+    private func endActivity(thenLoop: [Frame], flourish: [Frame] = []) {
+        let hadHat = costumeOn
+        currentActivity = .none
         costumeOn = false
         animator.setLoop(thenLoop)
-        animator.playImmediately(Sequences.hatOffTransition)
+
+        if hadHat {
+            animator.playImmediately(Sequences.hatOffTransition + flourish)
+        } else if !flourish.isEmpty {
+            animator.playImmediately(flourish)
+        }
     }
 
-    /// What should be playing right now given the real mood — used when the
-    /// testing toggle switches off to hand control back cleanly.
     private func loopForCurrentState() -> [Frame] {
-        if testCookingLoop || costumeOn { return Sequences.cookLoop }
         switch mood {
         case .asleep:      return Sequences.sleeping
-        case .working:     return Sequences.cookLoop
+        case .working:     return Sequences.workingIdle
         case .waiting:     return Sequences.asking
         case .celebrating: return Sequences.idle
         }
@@ -147,24 +198,27 @@ final class ClawdView: NSView {
 
         switch newMood {
         case .working:
-            enterCooking()
+            // Nothing to show yet — the first PreToolUse picks the activity.
+            setActivity(.none)
         case .asleep:
-            exitCooking(thenLoop: Sequences.sleeping)
+            endActivity(thenLoop: Sequences.sleeping)
         case .waiting:
-            exitCooking(thenLoop: Sequences.asking)
+            endActivity(thenLoop: Sequences.asking)
         case .celebrating:
-            exitCooking(thenLoop: Sequences.idle)
+            endActivity(thenLoop: Sequences.idle, flourish: Sequences.celebrate)
         }
     }
 
     @objc private func toggleCookingTest() {
         testCookingLoop.toggle()
         if testCookingLoop {
-            enterCooking()
-        } else if mood != .working {
-            // If a real task is genuinely running, leave the costume on —
-            // only drop it here if there's no real reason for it anymore.
-            exitCooking(thenLoop: loopForCurrentState())
+            setActivity(.cooking)
+        } else if mood == .working {
+            // A real task is genuinely running — drop back to neutral and
+            // let the next real tool event re-sync the activity.
+            setActivity(.none)
+        } else {
+            endActivity(thenLoop: loopForCurrentState())
         }
     }
 
@@ -173,13 +227,12 @@ final class ClawdView: NSView {
     }
 
     private func maybeFidget(now: Date) {
-        // The continuous cook loop already has something happening on
-        // screen — idle fidgets are only for when Clawd is genuinely idle.
-        guard !testCookingLoop, !costumeOn else { return }
+        // Every tool-shaped activity already has something happening on
+        // screen — idle fidgets are only for when Clawd is genuinely asleep.
+        guard !testCookingLoop, !costumeOn, mood == .asleep else { return }
         guard now >= nextFidgetAt, !animator.isBusy, !isHeld, elevation == 0 else { return }
         scheduleNextFidget()
 
-        guard mood == .asleep else { return }
         animator.play(Double.random(in: 0...1) < 0.65
                       ? Sequences.sleepFidget()
                       : Sequences.idleFidget())

@@ -34,6 +34,10 @@ enum Pose {
     case chefRaiseLeft  // tossing: arm swings up and to the left
     case chefRaiseRight // tossing: arm swings up and to the right
     case chefPeak        // tossing: food airborne at the top of the arc, pan retracted
+    case terminalOn      // holding a small terminal, cursor lit — while reading/researching
+    case terminalOff     // same, cursor blinked off
+    case typingA         // holding a small keyboard, left hand at rest
+    case typingB         // same, left hand pulled in mid-keystroke
 }
 
 enum ClawdSprite {
@@ -53,8 +57,14 @@ enum ClawdSprite {
     static let panColor  = NSColor(srgbRed: 0.30, green: 0.30, blue: 0.33, alpha: 1.0)
     /// The food being cooked.
     static let foodColor = NSColor(srgbRed: 76.0 / 255.0, green: 175.0 / 255.0, blue: 80.0 / 255.0, alpha: 1.0)
+    /// Small terminal held while reading/researching.
+    static let screenColor = NSColor(srgbRed: 0.12, green: 0.12, blue: 0.14, alpha: 1.0)
+    static let cursorColor = NSColor(srgbRed: 76.0 / 255.0, green: 217.0 / 255.0, blue: 100.0 / 255.0, alpha: 1.0)
+    /// Small keyboard held while editing.
+    static let keyboardColor = NSColor(srgbRed: 0.80, green: 0.80, blue: 0.82, alpha: 1.0)
 
-    // '#' = body, '0' = eye, '.' = transparent, 'W'/'w' = hat, 'S' = pan, 'G' = food.
+    // '#' = body, '0' = eye, '.' = transparent, 'W'/'w' = hat, 'S' = pan, 'G' = food,
+    // 'T' = terminal screen, 'c' = cursor, 'K' = keyboard.
     // Every row is exactly 24 characters, every grid exactly 18 rows.
 
     private static let standingGrid = [
@@ -380,6 +390,98 @@ enum ClawdSprite {
         "....##..##....##..##....",
     ]
 
+    // ── Reading / thinking — a small terminal, no hat ───────────────────
+    //
+    // Context-aware activities: rather than cloning one reel's costume for
+    // every state, different tools get different small props, all using the
+    // same right-hand zone and the same rule — body offset always 0.
+
+    private static let terminalOnGrid = [
+        "........................",
+        "........................",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "####################TTTT",
+        "####################TcTT",
+        "####################TTTT",
+        "####################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
+    private static let terminalOffGrid = [
+        "........................",
+        "........................",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "####################TTTT",
+        "####################TTTT",
+        "####################TTTT",
+        "####################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
+    // ── Editing — a small keyboard, left hand taps ──────────────────────
+
+    private static let typingAGrid = [
+        "........................",
+        "........................",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        "########################",
+        "########################",
+        "####################KKKK",
+        "####################KKKK",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
+    private static let typingBGrid = [
+        "........................",
+        "........................",
+        "....################....",
+        "....################....",
+        "....##00########00##....",
+        "....##00########00##....",
+        ".##.####################",
+        "########################",
+        "####################KKKK",
+        "####################KKKK",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....################....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+        "....##..##....##..##....",
+    ]
+
     static func grid(for pose: Pose) -> [String] {
         switch pose {
         case .standing:    return standingGrid
@@ -396,6 +498,10 @@ enum ClawdSprite {
         case .chefRaiseLeft:    return chefRaiseLeftGrid
         case .chefRaiseRight:   return chefRaiseRightGrid
         case .chefPeak:         return chefPeakGrid
+        case .terminalOn:       return terminalOnGrid
+        case .terminalOff:      return terminalOffGrid
+        case .typingA:          return typingAGrid
+        case .typingB:          return typingBGrid
         }
     }
 
@@ -413,6 +519,9 @@ enum ClawdSprite {
         var hatShadeRects: [CGRect] = []
         var panRects: [CGRect] = []
         var foodRects: [CGRect] = []
+        var screenRects: [CGRect] = []
+        var cursorRects: [CGRect] = []
+        var keyboardRects: [CGRect] = []
         bodyRects.reserveCapacity(cols * rows)
 
         for (r, row) in g.enumerated() {
@@ -427,6 +536,9 @@ enum ClawdSprite {
                 case "w": hatShadeRects.append(rect)
                 case "S": panRects.append(rect)
                 case "G": foodRects.append(rect)
+                case "T": screenRects.append(rect)
+                case "c": cursorRects.append(rect)
+                case "K": keyboardRects.append(rect)
                 default:  bodyRects.append(rect)
                 }
             }
@@ -453,6 +565,18 @@ enum ClawdSprite {
         if !foodRects.isEmpty {
             ctx.setFillColor(foodColor.cgColor)
             ctx.fill(foodRects)
+        }
+        if !screenRects.isEmpty {
+            ctx.setFillColor(screenColor.cgColor)
+            ctx.fill(screenRects)
+        }
+        if !cursorRects.isEmpty {
+            ctx.setFillColor(cursorColor.cgColor)
+            ctx.fill(cursorRects)
+        }
+        if !keyboardRects.isEmpty {
+            ctx.setFillColor(keyboardColor.cgColor)
+            ctx.fill(keyboardRects)
         }
     }
 
