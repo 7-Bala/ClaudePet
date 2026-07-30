@@ -31,6 +31,12 @@ final class ClawdView: NSView {
 
     private var mood: Mood = .asleep
 
+    /// Right-click → "Play Cooking Animation" — forces the cooking loop on
+    /// regardless of what Claude is actually doing, until switched off again.
+    /// Testing only: lets you eyeball the costume without waiting for a real
+    /// tool call to trigger it.
+    private var testCookingLoop = false
+
     private var posX: CGFloat = 0
     private var travelRemaining: CGFloat = 0
     private var travelSpeed: CGFloat = 0
@@ -108,25 +114,35 @@ final class ClawdView: NSView {
         }
     }
 
+    /// The loop that should be playing right now, honouring the testing
+    /// override if it's on.
+    private func loopForCurrentState() -> [Frame] {
+        if testCookingLoop { return Sequences.cookMeal }
+        switch mood {
+        case .asleep:      return Sequences.sleeping
+        case .working:     return Sequences.working
+        case .waiting:     return Sequences.asking
+        case .celebrating: return Sequences.idle
+        }
+    }
+
     private func moodChanged(to newMood: Mood) {
         mood = newMood
         endTravel()
         scheduleNextFidget()
+        animator.setLoop(loopForCurrentState())
 
-        switch newMood {
-        case .asleep:
-            animator.setLoop(Sequences.sleeping)
-            nextMoveAt = .distantFuture
-        case .working:
-            animator.setLoop(Sequences.working)
+        if newMood == .working, !testCookingLoop {
             scheduleNextMove()
-        case .waiting:
-            animator.setLoop(Sequences.asking)
-            nextMoveAt = .distantFuture
-        case .celebrating:
-            animator.setLoop(Sequences.idle)
+        } else {
             nextMoveAt = .distantFuture
         }
+    }
+
+    @objc private func toggleCookingTest() {
+        testCookingLoop.toggle()
+        endTravel()
+        animator.setLoop(loopForCurrentState())
     }
 
     private func scheduleNextMove() {
@@ -138,6 +154,7 @@ final class ClawdView: NSView {
     }
 
     private func maybeFidget(now: Date) {
+        guard !testCookingLoop else { return }
         guard now >= nextFidgetAt, !animator.isBusy, !isHeld,
               elevation == 0, travelRemaining == 0 else { return }
         scheduleNextFidget()
@@ -170,7 +187,7 @@ final class ClawdView: NSView {
         stepPhysics(dt: CGFloat(dt))
         maybeFidget(now: now)
 
-        if mood == .working, !animator.isBusy, !isHeld, elevation == 0,
+        if mood == .working, !testCookingLoop, !animator.isBusy, !isHeld, elevation == 0,
            travelRemaining == 0, now >= nextMoveAt {
             Bool.random() ? startStroll() : startSkip()
         }
@@ -232,7 +249,7 @@ final class ClawdView: NSView {
         travelRemaining = 0
         if isStrolling {
             isStrolling = false
-            animator.setLoop(mood == .working ? Sequences.working : Sequences.sleeping)
+            animator.setLoop(loopForCurrentState())
         }
     }
 
@@ -375,6 +392,13 @@ final class ClawdView: NSView {
         }
 
         menu.addItem(.separator())
+        let cookTest = NSMenuItem(title: "Play Cooking Animation (Testing)",
+                                  action: #selector(toggleCookingTest), keyEquivalent: "")
+        cookTest.target = self
+        cookTest.state = testCookingLoop ? .on : .off
+        menu.addItem(cookTest)
+
+        menu.addItem(.separator())
         let status = NSMenuItem(title: statusLine(), action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
@@ -388,6 +412,7 @@ final class ClawdView: NSView {
     }
 
     private func statusLine() -> String {
+        if testCookingLoop { return "Testing: cooking animation" }
         switch mood {
         case .asleep:      return "Sleeping"
         case .working:     return "Claude is working"
