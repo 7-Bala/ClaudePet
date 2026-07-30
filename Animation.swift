@@ -51,19 +51,23 @@ enum Sequences {
         Bool.random() ? jump : look
     }
 
-    // MARK: Chef costume
+    // MARK: Chef costume — visual correction pass
     //
-    // Two things changed here based on watching it happen: putting the hat
-    // on is a real gesture — arms rise (`hatPlacing`, which is `armsUp`'s
-    // body with the hat drawn on top) and come back down with the hat
-    // settled (`hatOn`) — and the body never moves during a toss. The old
-    // version lifted the whole sprite (`offset: -1`) to sell the flip, which
-    // read as a jump. Now only the pan-hand's own pixels climb from the
-    // resting row up through the eye-row band to hat height and back; the
-    // head, body and legs hold perfectly still throughout.
+    // Putting the hat on is a real gesture — arms rise (`hatPlacing`, which
+    // is `armsUp`'s body with the hat drawn on top) and come back down with
+    // the hat settled (`hatOn`).
     //
-    // These are one-shots meant to be played exactly once at the moment the
-    // costume goes on or comes off — see ClawdView's costumeOn tracking.
+    // The toss itself is built from causally-ordered authored poses rather
+    // than a generic up/down bounce: look at the pan, dip in anticipation,
+    // flick, food separates, food climbs (tumbling, slowing near the top),
+    // holds at the apex, falls (tumbling, accelerating), lands, the pan dips
+    // on impact, and only after a beat do the eyes relax forward again. The
+    // body's `offset` is 0 in every one of these frames — the only things
+    // that move are the arm/pan assembly and the food, exactly as specified.
+    //
+    // hatOnTransition/hatOffTransition are one-shots meant to play exactly
+    // once at the moment the costume goes on or comes off — see ClawdView's
+    // costumeOn tracking.
 
     static let hatOnTransition: [Frame] =
         hold(.hatPlacing, 6) + hold(.hatOn, 3)
@@ -71,27 +75,35 @@ enum Sequences {
     static let hatOffTransition: [Frame] =
         hold(.hatOn, 2) + hold(.hatPlacing, 6) + hold(.standing, 3)
 
-    /// One toss, swung to the left: pan and food climb from the resting row
-    /// up to hat height, hang a moment, then come back down.
-    private static let tossLeft: [Frame] =
-        hold(.chefIdle, 4) +
-        hold(.chefRaiseLeft, 3) +
-        hold(.chefPeak, 4) +
-        hold(.chefRaiseLeft, 3)
+    /// One full toss: hold → anticipate → flick → launch → rise (tumbling,
+    /// slowing) → apex (held) → fall (tumbling, accelerating) → catch → dip
+    /// → recover → a beat of inspection before the eyes let go of the pan.
+    /// Hold counts are deliberately uneven — fast near the pan, slow near
+    /// the apex — instead of even spacing, so the motion doesn't read as a
+    /// constant-speed loop.
+    private static let toss: [Frame] =
+        hold(.cookHoldPan, 8) +          // COOK_READY / COOK_LOOK_PAN
+        hold(.cookAnticipate, 4) +       // anticipation: wrist dips
+        hold(.cookFlick1, 2) +           // wrist rising
+        hold(.cookFlick2, 2) +           // strongest flick — hat reacts, food launches
+        hold(.cookFoodLeaving, 2) +      // food just separated, adjacent to the pan
+        hold(.cookFoodLowAscend, 2) +    // fast
+        hold(.cookFoodHighAscend, 3) +   // slowing
+        hold(.cookFoodApex, 5) +         // held — the tiny stare
+        hold(.cookFoodHighDescend, 3) +  // slow
+        hold(.cookFoodLowDescend, 2) +   // faster
+        hold(.cookCatch, 2) +            // food adjacent to the rim
+        hold(.cookCatchDip, 3) +         // pan + arm dip on impact
+        hold(.cookHoldPan, 4)            // recover, then inspect — eyes stay on the pan
 
-    /// Same toss, mirrored to the right. Alternating the two in the loop
-    /// below is what makes it read as a real sideways flip rather than a
-    /// straight up-down bounce that would obviously be looping.
-    private static let tossRight: [Frame] =
-        hold(.chefIdle, 4) +
-        hold(.chefRaiseRight, 3) +
-        hold(.chefPeak, 4) +
-        hold(.chefRaiseRight, 3)
+    /// Occasionally, between tosses, the eyes actually relax forward for a
+    /// moment — "the rare idle moment" — before the next toss begins.
+    private static let tossThenRelax: [Frame] = toss + hold(.cookIdleEyes, 3)
 
     /// The continuous cooking loop. Assumes the hat and pan are already on —
     /// this is what plays for as long as the pan is out, whether that's one
     /// second or ten minutes, with no fixed length of its own to notice.
-    static let cookLoop: [Frame] = tossLeft + tossRight
+    static let cookLoop: [Frame] = toss + toss + tossThenRelax
 
     // MARK: Other tool-shaped activities
     //
